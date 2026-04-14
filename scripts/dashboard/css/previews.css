@@ -1,0 +1,117 @@
+/* Editorial Photo Mockup */
+.editorial-photo-mockup {
+  position: relative;
+  height: 400px;
+  overflow: hidden;
+  border-radius: 4px;
+}
+
+.editorial-photo-mockup .mockup-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  filter: brightness(0.7);
+}
+
+.editorial-photo-mockup .overlay {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 24px;
+  background: linear-gradient(180deg, transparent, rgba(0,0,0,0.8));
+  color: #fff;
+}
+
+.editorial-photo-mockup h2 {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 8px;
+  line-height: 1.2;
+}
+
+.editorial-photo-mockup p {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* B&W Cinematic Style */
+.bw-cinematic-mockup {
+  position: relative;
+  height: 400px;
+  background: #222;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.bw-cinematic-mockup .cinematic-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(45deg, #1a1a1a, #333);
+  opacity: 0.8;
+}
+
+.bw-cinematic-mockup .cinematic-text {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  color: #fff;
+  padding: 24px;
+}
+
+.bw-cinematic-mockup h2 {
+  font-size: 24px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  letter-spacing: 1px;
+}
+
+.bw-cinematic-mockup p {
+  font-size: 14px;
+  opacity: 0.9;
+}
+
+/* Bold Electric Style */
+.bold-electric-mockup {
+  position: relative;
+  height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.bold-electric-mockup .electric-bg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: linear-gradient(135deg, #FFD700, #FF8C00);
+}
+
+.bold-electric-mockup .electric-text {
+  position: relative;
+  z-index: 10;
+  text-align: center;
+  color: #000;
+  padding: 24px;
+}
+
+.bold-electric-mockup h2 {
+  font-size: 28px;
+  font-weight: 900;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.bold-electric-mockup p {
+  font-size: 16px;
+  font-weight: 700;
+}
