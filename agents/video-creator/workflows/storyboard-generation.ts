@@ -2,37 +2,55 @@ import { Script, Storyboard, VisualScene } from '../types';
 import { VIDEO_AGENT_CONFIG } from '../config';
 
 const STORYBOARD_PROMPT = (script: Script) => `
-You are a professional cinematographer and visual director. Create a detailed visual storyboard for this video script:
+You are a cinematographer and art director helping create professional cinematic videos.
+
+Create a visual storyboard for this ${script.duration}s video script, including:
+1. Detailed visual descriptions for each scene (50-100 words)
+2. Color palette recommendations (primary, secondary, accent colors in hex)
+3. Cinematographic style (cinematic, modern, vintage, documentary)
+4. Mood (warm golden hour, cool blue tones, vibrant, etc.)
+5. Cinematic inspiration (reference a movie, TV show, or visual style)
+6. Camera motion specifics (pan, zoom, dolly, static)
+7. Subject motion if applicable (hand movements, people walking, etc.)
+8. Frame continuity hints (if this scene should link to previous via final frame)
 
 Script:
 ${JSON.stringify(script, null, 2)}
 
-For each scene, provide:
-1. A vivid visual description (30-50 words) describing what appears on screen
-2. Cinematography style (e.g., "wide establishing shot", "close-up", "overhead")
-3. Camera movement (e.g., "pan left", "zoom in", "static")
-4. Lighting mood (e.g., "morning light", "dramatic shadows", "bright and clean")
-5. Color palette suggestions
-
-Focus on creating a cohesive, cinematic look that supports the script's message and tone.
-
-Format as JSON:
+For each scene, create a JSON object with these fields:
 {
-  "title": "${script.title}",
-  "scenes": [
-    {
-      "sceneNumber": 1,
-      "visualDescription": "Detailed visual description...",
-      "style": "cinematic, realistic",
-      "camera": "wide establishing shot",
-      "animation": "slow pan left",
-      "colorPalette": "warm, earthy tones"
-    }
-  ]
+  "sceneNumber": 1,
+  "visualDescription": "Detailed description...",
+  "colorScheme": {
+    "primary": "#FF6B35",
+    "secondary": "#004E89",
+    "accent": "#F7B801",
+    "mood": "warm",
+    "grading": "cinematic"
+  },
+  "motionOption": {
+    "type": "subtle-camera",
+    "camera": {
+      "motion": "pan-left",
+      "speed": "slow",
+      "intensity": 30
+    },
+    "subject": null
+  },
+  "cinematicReference": {
+    "movie": "Inception",
+    "tvShow": null,
+    "style": "warm golden hour cinematography",
+    "inspirationBrief": "Morning light scenes with deep color grading"
+  },
+  "frameContinuity": false
 }
+
+Ensure visual cohesion across all scenes. Colors should work together. Motion should flow naturally between clips.
+Return as JSON array of scene objects.
 `;
 
-interface StoryboardOptions {
+interface StoryboardGenerationOptions {
   onProgress?: (message: string) => void;
 }
 
@@ -41,27 +59,27 @@ interface StoryboardOptions {
  */
 export async function generateStoryboard(
   script: Script,
-  options: StoryboardOptions = {}
+  options: StoryboardGenerationOptions = {}
 ): Promise<Storyboard> {
   const { onProgress } = options;
 
-  onProgress?.('Generating visual storyboard...');
+  onProgress?.('Generating cinematic storyboard with Claude...');
 
   if (VIDEO_AGENT_CONFIG.claude.apiKey) {
-    return await generateStoryboardWithAPI(script);
+    return await generateStoryboardWithClaudeEnhanced(script);
   } else {
-    console.log('⚠️  Using template storyboard for demonstration');
+    console.log('⚠️  CLAUDE_API_KEY not set. Using template storyboard.');
     return generateTemplateStoryboard(script);
   }
 }
 
 /**
- * Generate storyboard using Claude API
+ * Generate enhanced storyboard using Claude API with color schemes and cinematic references
  */
-async function generateStoryboardWithAPI(script: Script): Promise<Storyboard> {
+async function generateStoryboardWithClaudeEnhanced(script: Script): Promise<Storyboard> {
   const apiKey = VIDEO_AGENT_CONFIG.claude.apiKey;
   if (!apiKey) {
-    throw new Error('CLAUDE_API_KEY not set');
+    throw new Error('CLAUDE_API_KEY not set for enhanced storyboarding');
   }
 
   try {
@@ -74,7 +92,7 @@ async function generateStoryboardWithAPI(script: Script): Promise<Storyboard> {
       },
       body: JSON.stringify({
         model: VIDEO_AGENT_CONFIG.claude.model,
-        max_tokens: 3000,
+        max_tokens: 6000,
         messages: [
           {
             role: 'user',
@@ -91,29 +109,35 @@ async function generateStoryboardWithAPI(script: Script): Promise<Storyboard> {
     const data = (await response.json()) as any;
     const storyboardText = data.content[0].text;
 
-    const jsonMatch = storyboardText.match(/\{[\s\S]*\}/);
+    // Extract JSON array from response
+    const jsonMatch = storyboardText.match(/\[\s*\{[\s\S]*\}\s*\]/);
     if (!jsonMatch) {
-      throw new Error('Failed to extract JSON from Claude response');
+      throw new Error('Failed to extract storyboard JSON from Claude response');
     }
 
-    const storyboardJson = JSON.parse(jsonMatch[0]);
+    const scenesArray = JSON.parse(jsonMatch[0]);
+
     return {
-      title: storyboardJson.title,
+      title: script.title,
       duration: script.duration,
-      scenes: storyboardJson.scenes.map((scene: any, index: number) => ({
+      scenes: scenesArray.map((scene: any, index: number) => ({
         sceneNumber: scene.sceneNumber || index + 1,
         duration: script.scenes[index]?.duration || 5,
         scriptLine: script.scenes[index]?.scriptLine || '',
         visualDescription: scene.visualDescription,
         imagePromptSeed: scene.visualDescription,
-        style: scene.style || 'cinematic',
-        camera: scene.camera || 'medium shot',
-        animation: scene.animation || 'subtle motion',
+        colorScheme: scene.colorScheme,
+        motionOption: scene.motionOption,
+        cinematicReference: scene.cinematicReference,
+        frameContinuity: scene.frameContinuity || false,
+        style: scene.colorScheme?.grading || 'cinematic',
+        camera: scene.motionOption?.camera?.motion || 'medium shot',
+        animation: scene.motionOption?.type || 'subtle motion',
       })),
       generatedAt: new Date().toISOString(),
     };
   } catch (error) {
-    console.error('Error calling Claude API for storyboard:', error);
+    console.error('Error calling Claude API for enhanced storyboarding:', error);
     throw error;
   }
 }
@@ -123,11 +147,121 @@ async function generateStoryboardWithAPI(script: Script): Promise<Storyboard> {
  */
 function generateTemplateStoryboard(script: Script): Storyboard {
   const visualStyles = [
-    { camera: 'wide establishing shot', animation: 'slow pan left', style: 'cinematic' },
-    { camera: 'close-up detail', animation: 'zoom in', style: 'modern' },
-    { camera: 'overhead flat lay', animation: 'static with movement in frame', style: 'minimalist' },
-    { camera: 'medium shot', animation: 'pan right', style: 'documentary' },
-    { camera: 'extreme close-up', animation: 'slow zoom', style: 'cinematic' },
+    {
+      camera: 'wide establishing shot',
+      animation: 'slow pan left',
+      style: 'cinematic',
+      colorScheme: {
+        primary: '#FF6B35',
+        secondary: '#004E89',
+        accent: '#F7B801',
+        mood: 'warm' as const,
+        grading: 'cinematic' as const,
+      },
+      motionOption: {
+        type: 'subtle-camera' as const,
+        camera: {
+          motion: 'pan-left' as const,
+          speed: 'slow' as const,
+          intensity: 25,
+        },
+      },
+      cinematicReference: {
+        style: 'warm golden hour cinematography',
+        inspirationBrief: 'Morning light establishing shot',
+      },
+    },
+    {
+      camera: 'close-up detail',
+      animation: 'zoom in',
+      style: 'modern',
+      colorScheme: {
+        primary: '#1A1A1A',
+        secondary: '#FFFFFF',
+        accent: '#00D9FF',
+        mood: 'cool' as const,
+        grading: 'modern' as const,
+      },
+      motionOption: {
+        type: 'subtle-camera' as const,
+        camera: {
+          motion: 'zoom-in' as const,
+          speed: 'medium' as const,
+          intensity: 40,
+        },
+      },
+      cinematicReference: {
+        style: 'high-contrast digital aesthetic',
+        inspirationBrief: 'Modern tech product reveal',
+      },
+    },
+    {
+      camera: 'overhead flat lay',
+      animation: 'static with movement in frame',
+      style: 'minimalist',
+      colorScheme: {
+        primary: '#F5F5F5',
+        secondary: '#2D2D2D',
+        accent: '#85C1E9',
+        mood: 'neutral' as const,
+        grading: 'documentary' as const,
+      },
+      motionOption: {
+        type: 'static' as const,
+      },
+      cinematicReference: {
+        style: 'clean minimalist composition',
+        inspirationBrief: 'Carefully arranged overhead shot',
+      },
+    },
+    {
+      camera: 'medium shot',
+      animation: 'pan right',
+      style: 'documentary',
+      colorScheme: {
+        primary: '#8B7355',
+        secondary: '#D4A574',
+        accent: '#3D5A3D',
+        mood: 'warm' as const,
+        grading: 'documentary' as const,
+      },
+      motionOption: {
+        type: 'subtle-camera' as const,
+        camera: {
+          motion: 'pan-right' as const,
+          speed: 'slow' as const,
+          intensity: 30,
+        },
+      },
+      cinematicReference: {
+        style: 'natural documentary lighting',
+        inspirationBrief: 'Authentic documentary-style coverage',
+      },
+    },
+    {
+      camera: 'extreme close-up',
+      animation: 'slow zoom',
+      style: 'cinematic',
+      colorScheme: {
+        primary: '#2C3E50',
+        secondary: '#E74C3C',
+        accent: '#ECF0F1',
+        mood: 'vibrant' as const,
+        grading: 'cinematic' as const,
+      },
+      motionOption: {
+        type: 'subtle-camera' as const,
+        camera: {
+          motion: 'zoom-in' as const,
+          speed: 'slow' as const,
+          intensity: 35,
+        },
+      },
+      cinematicReference: {
+        style: 'dramatic detail cinematography',
+        inspirationBrief: 'Intimate close-up with emotional depth',
+      },
+    },
   ];
 
   const visualDescriptions = [
@@ -141,6 +275,7 @@ function generateTemplateStoryboard(script: Script): Storyboard {
   const scenes: VisualScene[] = script.scenes.map((scene, index) => {
     const styleIndex = index % visualStyles.length;
     const descIndex = index % visualDescriptions.length;
+    const style = visualStyles[styleIndex];
 
     return {
       sceneNumber: scene.number,
@@ -148,9 +283,13 @@ function generateTemplateStoryboard(script: Script): Storyboard {
       scriptLine: scene.scriptLine,
       visualDescription: visualDescriptions[descIndex],
       imagePromptSeed: visualDescriptions[descIndex],
-      style: visualStyles[styleIndex].style,
-      camera: visualStyles[styleIndex].camera,
-      animation: visualStyles[styleIndex].animation,
+      style: style.style,
+      camera: style.camera,
+      animation: style.animation,
+      colorScheme: style.colorScheme,
+      motionOption: style.motionOption,
+      cinematicReference: style.cinematicReference,
+      frameContinuity: index > 0,
     };
   });
 
