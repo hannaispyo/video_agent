@@ -1,90 +1,80 @@
 # Emily's Video Creation Agent
 
-Orchestrates a professional video creation workflow inspired by Emily Higgins' cinematic process.
+Fully automatic video creation agent that replicates Emily Higgins' cinematic process.
 
 ## Overview
 
-This agent replicates Emily Higgins' end-to-end video creation pipeline:
+Orchestrates end-to-end video generation **completely automatically** - no pauses, no approvals:
 
 ```
-Brief → Script → Storyboard → Image Prompts → Image Generation → Animation → Video Assembly
+Brief → Script → Storyboard → Prompts → Images → Animation → Video
+(All steps run automatically with fallback handling)
 ```
-
-Each step is iterative with user approval gates and checkpoint recovery.
 
 ## Quick Start
 
-### Create New Video Project
+**Create video in one command (fully automatic):**
 
 ```bash
-npm run create-video -- \
-  --brief "Video Title" \
-  --audience "target audience" \
-  --message "key message" \
-  --duration 30 \
-  --tone energetic
+npm run create-video-auto -- \
+  --brief "3 ADHD Productivity Hacks" \
+  --audience "ADHD individuals" \
+  --message "Simple strategies to improve focus"
 ```
 
-Or run interactively:
+That's it. Everything else happens automatically:
+- ✅ Script generation
+- ✅ Storyboard creation  
+- ✅ Image prompt optimization
+- ✅ Image generation (batch)
+- ✅ Animation (Kling or Remotion fallback)
+- ✅ Final video assembly
+
+**Optional parameters:**
 ```bash
-npm run create-video
+--duration 30        # Video length (default: 30s)
+--tone energetic     # Video tone (energetic, steady, comedic, educational)
 ```
 
-### Resume Existing Project
+No approval gates, no waiting, no interruptions. Just provides progress logs.
 
-```bash
-npm run resume-video -- --project my-video
+## Automatic Workflow
+
+All steps run **fully automatically** without pauses or user interaction:
+
+| Step | Time | Action |
+|------|------|--------|
+| **1. Script** | 5-10m | Claude generates script with 3-5 scenes |
+| **2. Storyboard** | 5-10m | Claude writes visual descriptions |
+| **3. Prompts** | 2-5m | Claude optimizes prompts for kie.ai |
+| **4. Images** | 10-20m | kie.ai generates images (batch, auto-retry) |
+| **5. Animation** | 15-30m | Kling animates (fallback to Remotion if needed) |
+| **6. Assembly** | 5-10m | Remotion assembles final MP4 |
+
+**Total time: ~60-90 minutes**
+
+Each step:
+- Runs automatically after the previous step completes
+- Logs progress to console
+- Uses automatic fallbacks if errors occur
+- Saves checkpoint for recovery if interrupted
+
+**Example progress output:**
 ```
-
-## Workflow Steps
-
-### 1. Scripting (5-10 min)
-- Claude generates a 30-second script with 3-5 scenes
-- Each scene includes voiceover copy and visual cues
-- User reviews and can request revisions
-- Iterates until approved
-
-**Output:** `script.json`
-
-### 2. Storyboarding (5-10 min)
-- System breaks script into scenes
-- Claude writes visual descriptions for each scene
-- Includes cinematography hints (camera angle, motion, lighting)
-- User reviews and optionally uploads reference images (Flim style)
-
-**Output:** `storyboard.json`
-
-### 3. Image Prompts (2-5 min)
-- Claude transforms visual descriptions into kie.ai prompts
-- Optimizes for image model quality and consistency
-- Includes animation hints for Kling
-- User can manually refine prompts
-
-**Output:** `image-prompts.json`
-
-### 4. Image Generation (10-20 min)
-- Batch requests to kie.ai API (5 parallel by default)
-- Auto-retry on failures
-- User reviews and can regenerate specific scenes
-- Saves PNG sequence
-
-**Output:** `images/` directory + `image-manifest.json`
-
-### 5. Animation (15-30 min)
-- Primary: Kling API (best quality motion)
-- Fallback: Remotion Ken Burns effect
-- Creates video clips from static images
-- User can review and re-animate specific clips
-
-**Output:** `clips/` directory + `animation-manifest.json`
-
-### 6. Video Assembly (5-10 min)
-- Remotion composition combines all clips
-- Voiceover audio synced to timing
-- Transitions applied between scenes
-- Final MP4 rendered
-
-**Output:** `out.mp4`
+[12:45:30] SCRIPT: Generating script...
+[12:45:42] SCRIPT: ✓ Generated 4 scenes, 30s total
+[12:45:43] STORY: Generating storyboard...
+[12:46:15] STORY: ✓ Generated visual descriptions for 4 scenes
+[12:46:16] PROMPT: Engineering image prompts...
+[12:46:31] PROMPT: ✓ Engineered 4 optimized prompts
+[12:46:32] IMAGE: Generating images...
+[12:47:45] IMAGE: ✓ Generated 4/4 images
+[12:47:46] ANIM: Animating images...
+[12:48:50] ANIM: ✓ Animated 4/4 clips
+[12:48:51] ASSEM: Assembling final video...
+[12:49:02] ASSEM: ✓ Final video: out.mp4 (30s)
+[12:49:03] SUCCESS: ✅ Video created successfully!
+```
 
 ## Architecture
 
@@ -103,62 +93,55 @@ VideoProjectManager (Orchestrator)
 
 ## Environment Variables
 
-### Required
-```env
-# Claude API (for script/storyboard generation)
-CLAUDE_API_KEY=sk_...
-CLAUDE_MODEL=claude-opus
+Copy `config/video-agent.env.template` to project root and fill in your API keys:
 
-# kie.ai (image generation)
-KIE_API_KEY=sk_...
-```
-
-### Optional
-```env
-# Kling API (for animation - fallback to Remotion if not set)
-KLING_API_KEY=sk_...
-KLING_API_ENDPOINT=https://api.kling.ai/v1
-KLING_ANIMATION_MODEL=kling-v1
-
-# Agent settings
-VIDEO_AUTO_APPROVE_AFTER_MINUTES=0  # 0 = require approval
-VIDEO_PROJECT_DIR=./outputs/videos
-VIDEO_APPROVAL_REQUIRED=true
-```
-
-## Approval Gates
-
-By default, the agent pauses at each major step for user review:
-
-```
-┌──────────────────────────────────────┐
-│ Script Generated                     │
-│ ✓ 4 scenes, 30 seconds              │
-│ ✓ Tone: energetic                   │
-│                                      │
-│ [Preview] [Approve] [Edit] [Cancel] │
-└──────────────────────────────────────┘
-```
-
-To auto-approve all steps (for testing):
-```env
-VIDEO_APPROVAL_REQUIRED=false
-VIDEO_AUTO_APPROVE_AFTER_MINUTES=0
-```
-
-## Checkpoint Recovery
-
-If the process interrupts (network error, API timeout, etc.), the project saves checkpoints.
-
-Resume from the last completed step:
 ```bash
-npm run resume-video -- --project my-video
+cp config/video-agent.env.template .env
+```
+
+**Required (for real API usage):**
+```env
+CLAUDE_API_KEY=sk_...           # Anthropic Claude API
+KIE_API_KEY=sk_...              # kie.ai image generation
+```
+
+**Optional (falls back to Remotion if not set):**
+```env
+KLING_API_KEY=sk_...            # Kling animation API
+```
+
+**If keys are not set:** Agent uses template implementations (for testing/demo)
+
+## No Approval Gates
+
+The agent runs **fully automatic** by default - no approval gates, no pauses.
+
+Each step completes and the next one starts immediately. Just watch the logs.
+
+If you want to check progress without waiting:
+```bash
+npm run video-status -- --project my-video-name
+```
+
+This shows:
+- Current step
+- Progress percentage
+- Estimated time remaining
+- Any errors encountered
+
+## Automatic Checkpoint Recovery
+
+If the process is interrupted (network error, API timeout), it saves checkpoints automatically.
+
+Resume from last completed step:
+```bash
+npm run resume-video -- --project my-video-name
 ```
 
 The agent will:
 1. Load the last checkpoint
-2. Show current progress
-3. Offer to continue or restart any step
+2. Show progress
+3. Continue from where it left off (no need to restart)
 
 ## Project Structure
 
@@ -186,7 +169,7 @@ outputs/videos/{project-name}/
 ## Example: Create Productivity Video
 
 ```bash
-npm run create-video -- \
+npm run create-video-auto -- \
   --brief "3 Productivity Hacks for ADHD" \
   --audience "ADHD individuals" \
   --message "Simple strategies to manage hyperfocus and context switching" \
@@ -194,15 +177,30 @@ npm run create-video -- \
   --tone energetic
 ```
 
-This will:
-1. Generate a 30-second script with 4-5 scenes
-2. Create visual storyboard (cinematic, realistic style)
-3. Optimize prompts for kie.ai image generation
-4. Generate high-quality imagery
-5. Animate with motion (Kling or Remotion)
-6. Assemble into final MP4
+Output:
+```
+🎬 Emily's Video Creator (Automatic Mode)
 
-Total time: ~60-90 minutes (depending on API response times)
+📋 Project: 3-productivity-hacks-for-adhd
+   Title: 3 Productivity Hacks for ADHD
+   Audience: ADHD individuals
+   Message: Simple strategies to manage hyperfocus and context switching
+   Duration: 30s
+   Tone: energetic
+
+▶️  Starting automatic workflow...
+
+[12:45:30] SCRIPT: Generating script...
+[12:45:42] SCRIPT: ✓ Generated 4 scenes, 30s total
+[12:45:43] STORY: Generating storyboard...
+[12:46:15] STORY: ✓ Generated visual descriptions for 4 scenes
+...
+[12:49:03] SUCCESS: ✅ Video created successfully!
+
+📂 Output: outputs/videos/3-productivity-hacks-for-adhd/out.mp4
+```
+
+Everything runs automatically. Total time: ~60-90 minutes
 
 ## Integration with MCP
 
@@ -253,27 +251,35 @@ Generate multiple videos from campaign templates:
 npm run create-video -- --from-campaign 3-modos-tdah
 ```
 
+## Automatic Fallbacks
+
+The agent handles failures gracefully:
+
+| Failure | Fallback |
+|---------|----------|
+| CLAUDE_API_KEY not set | Uses template script |
+| KIE_API_KEY not set | Uses template images |
+| Kling API fails | Falls back to Remotion animations |
+| Image generation fails | Retries automatically (3x) |
+
+No action needed - the agent figures it out and keeps going.
+
 ## Troubleshooting
 
-### "CLAUDE_API_KEY not set"
-Set your Anthropic API key:
+### Agent is slow
+Check which APIs are actually being called:
 ```bash
-export CLAUDE_API_KEY=sk_...
+DEBUG=true npm run create-video-auto -- [params]
 ```
 
-### "KIE_API_KEY not set"
-The agent will use template images for demonstration. Set the key for real generation:
+### Check project status
 ```bash
-export KIE_API_KEY=sk_...
+npm run video-status -- --project my-video-name
 ```
 
-### Animation fails with Kling
-Agent automatically falls back to Remotion. No action needed.
-
-### Video assembly hangs
-Check Remotion is installed:
+### Resume interrupted project
 ```bash
-npm list remotion
+npm run resume-video -- --project my-video-name
 ```
 
 ## Implementation Status

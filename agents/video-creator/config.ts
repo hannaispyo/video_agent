@@ -1,8 +1,9 @@
 export const VIDEO_AGENT_CONFIG = {
   // Workflow settings
   autoApproveAfterMinutes: parseInt(process.env.VIDEO_AUTO_APPROVE_AFTER_MINUTES || '0'),
-  approvalRequired: process.env.VIDEO_APPROVAL_REQUIRED !== 'false',
+  approvalRequired: process.env.VIDEO_APPROVAL_REQUIRED === 'true', // Changed: false by default
   projectDir: process.env.VIDEO_PROJECT_DIR || './outputs/videos',
+  autoExecuteWorkflow: true, // New: skip all approval gates
 
   // Script generation
   script: {
