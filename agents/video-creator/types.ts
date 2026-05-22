@@ -101,6 +101,8 @@ export interface ImagePrompt {
     motion?: string;
     duration: number;
     transitions?: string;
+    intensity?: number;
+    subjectMotion?: string;
   };
   customNotes?: string;
 }

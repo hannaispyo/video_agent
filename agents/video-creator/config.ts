@@ -81,3 +81,26 @@ export const STEPS = [
   'animation',
   'assembly',
 ] as const;
+
+export const KLING_CONFIG = {
+  model: 'kling-v3',
+  defaultMotionIntensity: 30,
+  motionOptions: {
+    'subtle-camera': {
+      description: 'Smooth, subtle camera movements (pan, dolly)',
+      intensity: 20,
+    },
+    'subject-motion': {
+      description: 'Subject movement with camera stability',
+      intensity: 40,
+    },
+    'complex-motion': {
+      description: 'Complex camera and subject motion combined',
+      intensity: 60,
+    },
+    'static': {
+      description: 'Minimal motion, focus on composition',
+      intensity: 0,
+    },
+  },
+};
