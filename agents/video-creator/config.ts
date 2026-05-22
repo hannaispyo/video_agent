@@ -104,3 +104,62 @@ export const KLING_CONFIG = {
     },
   },
 };
+
+// Visual Enhancement Configuration
+// Features are auto-enabled based on API key availability and system dependencies
+export const VISUAL_ENHANCEMENT_CONFIG = {
+  // Feature toggles (auto-detect based on API availability)
+  colorSchemes: {
+    enabled: !!process.env.CLAUDE_API_KEY,
+    description: 'Claude-powered color scheme generation for storyboard scenes',
+  },
+  cinematicReferences: {
+    enabled: !!process.env.CLAUDE_API_KEY,
+    description: 'Movie/TV show cinematographic reference suggestions',
+  },
+  motionOptions: {
+    enabled: !!process.env.KLING_API_KEY,
+    description: 'Kling 3.0 motion hints (subtle-camera, subject-motion, complex-motion)',
+  },
+  frameContinuity: {
+    enabled: process.env.FFMPEG_AVAILABLE !== 'false',
+    description: 'Frame continuity linking - uses final frame of one clip as start of next',
+  },
+  visualCoherence: {
+    enabled: true,
+    description: 'Visual coherence validation - checks color consistency, motion flow, style coherence',
+  },
+
+  // Default values
+  defaults: {
+    colorMoodOptions: ['warm', 'cool', 'vibrant', 'neutral'] as const,
+    gradingStyles: ['cinematic', 'modern', 'vintage', 'documentary'] as const,
+    motionIntensityRange: { min: 0, max: 100 },
+    motionTypes: ['subtle-camera', 'subject-motion', 'complex-motion', 'static'] as const,
+  },
+
+  // Thresholds for coherence analysis
+  coherenceThresholds: {
+    colorAcceptable: 70, // Scores >= 70 are acceptable
+    motionAcceptable: 70,
+    styleAcceptable: 70,
+    overallMinimum: 60, // Warn if overall score < 60
+  },
+};
+
+// Initialize and log which features are enabled on startup
+export function initializeVisualEnhancements(): void {
+  console.log('📊 Visual Enhancement Features:');
+  const features = [
+    { key: 'colorSchemes', config: VISUAL_ENHANCEMENT_CONFIG.colorSchemes },
+    { key: 'cinematicReferences', config: VISUAL_ENHANCEMENT_CONFIG.cinematicReferences },
+    { key: 'motionOptions', config: VISUAL_ENHANCEMENT_CONFIG.motionOptions },
+    { key: 'frameContinuity', config: VISUAL_ENHANCEMENT_CONFIG.frameContinuity },
+    { key: 'visualCoherence', config: VISUAL_ENHANCEMENT_CONFIG.visualCoherence },
+  ];
+
+  features.forEach(({ key, config }) => {
+    const status = config.enabled ? '✅' : '⚠️';
+    console.log(`   ${status} ${key}: ${config.description}`);
+  });
+}
