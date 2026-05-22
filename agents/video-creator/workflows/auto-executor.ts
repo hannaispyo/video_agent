@@ -406,6 +406,7 @@ export class AutoVideoExecutor {
       if (!animationManifest) throw new Error('No animation manifest found');
 
       const result = await assembleVideo(animationManifest, script, this.manager.projectDir, {
+        audioPath: this.manager.audioPath,
         onProgress: (msg) => this.log('ASSEM', msg),
       });
 

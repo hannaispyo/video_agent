@@ -6,6 +6,7 @@ import { VIDEO_AGENT_CONFIG } from '../config';
 interface AssemblyOptions {
   audioFile?: string;
   musicFile?: string;
+  audioPath?: string;  // Path to generated voiceover audio
   onProgress?: (message: string) => void;
 }
 
@@ -18,7 +19,7 @@ export async function assembleVideo(
   projectDir: string,
   options: AssemblyOptions = {}
 ): Promise<{ success: boolean; outputPath: string; error?: string }> {
-  const { audioFile, musicFile, onProgress } = options;
+  const { audioFile, musicFile, audioPath, onProgress } = options;
 
   try {
     onProgress?.('Assembling video composition...');
@@ -28,13 +29,25 @@ export async function assembleVideo(
       throw new Error('No animation clips available for assembly');
     }
 
+    // Validate audio file exists if provided
+    let validAudioPath: string | undefined;
+    if (audioPath) {
+      if (fs.existsSync(audioPath)) {
+        validAudioPath = audioPath;
+        onProgress?.(`✓ Audio track found: ${audioPath}`);
+      } else {
+        onProgress?.(`⚠️  Audio file not found at ${audioPath}, continuing without audio`);
+      }
+    }
+
     // Create Remotion composition
     const compositionPath = path.join(projectDir, 'composition.ts');
     await createRemotionComposition(
       compositionPath,
       animationManifest,
       script,
-      projectDir
+      projectDir,
+      validAudioPath
     );
 
     onProgress?.('Rendering video with Remotion...');
@@ -45,7 +58,11 @@ export async function assembleVideo(
     // For demonstration, create placeholder output
     createPlaceholderVideo(outputPath);
 
-    onProgress?.('✓ Video assembled successfully!');
+    if (validAudioPath) {
+      onProgress?.('✓ Video assembled with audio track!');
+    } else {
+      onProgress?.('✓ Video assembled (audio-less)');
+    }
 
     return {
       success: true,
@@ -69,7 +86,8 @@ async function createRemotionComposition(
   filePath: string,
   animationManifest: AnimationManifest,
   script: Script,
-  projectDir: string
+  projectDir: string,
+  audioPath?: string
 ): Promise<void> {
   const composition = `import { Composition } from 'remotion';
 import { VideoSequence } from './VideoSequence';
@@ -87,6 +105,7 @@ export const VideoComposition = () => {
         clips: ${JSON.stringify(animationManifest.clips, null, 2)},
         script: ${JSON.stringify(script, null, 2)},
         projectDir: '${projectDir}',
+        audioPath: ${audioPath ? `'${audioPath}'` : 'undefined'},
       }}
     />
   );
