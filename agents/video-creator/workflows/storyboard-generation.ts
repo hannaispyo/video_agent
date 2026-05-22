@@ -129,7 +129,10 @@ async function generateStoryboardWithClaudeEnhanced(script: Script): Promise<Sto
         colorScheme: scene.colorScheme,
         motionOption: scene.motionOption,
         cinematicReference: scene.cinematicReference,
-        frameContinuity: scene.frameContinuity || false,
+        frameContinuity: scene.frameContinuity || {
+          linkedFromScene: undefined,
+          useAsStartFrame: false,
+        },
         style: scene.colorScheme?.grading || 'cinematic',
         camera: scene.motionOption?.camera?.motion || 'medium shot',
         animation: scene.motionOption?.type || 'subtle motion',
@@ -289,7 +292,10 @@ function generateTemplateStoryboard(script: Script): Storyboard {
       colorScheme: style.colorScheme,
       motionOption: style.motionOption,
       cinematicReference: style.cinematicReference,
-      frameContinuity: index > 0,
+      frameContinuity: {
+        linkedFromScene: undefined,
+        useAsStartFrame: false,
+      },
     };
   });
 
