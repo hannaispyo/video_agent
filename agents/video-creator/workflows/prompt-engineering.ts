@@ -78,7 +78,7 @@ ${motionDescription}
 COLOR & GRADING:
 ${colorGradingInstructions}
 
-${cinematicStyleGuide ? `CINEMATOGRAPHIC STYLE:\n${cinematicStyleGuide}\n` : ''}
+${cinematicStyleGuide ? `\nCINEMATOGRAPHIC STYLE:\n${cinematicStyleGuide}` : ''}
 
 TECHNICAL REQUIREMENTS:
 - Output format: MP4 video, 16:9 aspect ratio, 1920x1080 resolution
@@ -129,36 +129,38 @@ Complex motion with both camera and subject (Kling 3.0 "complex motion" option):
 `;
   }
 
-  return `Static or minimal motion: Camera positioned for optimal composition, focus on visual elements and lighting design, with stable framing throughout the duration.`;
+  if (motion.type === 'static') {
+    return `Static or minimal motion: Camera positioned for optimal composition, focus on visual elements and lighting design, with stable framing throughout the duration.`;
+  }
+
+  throw new Error(`Unknown motion type: ${motion.type}`);
 }
 
 /**
  * Build color grading instructions
  */
 function buildColorGradingInstructions(colors: ColorScheme): string {
+  const MOOD_DESCRIPTIONS: Record<string, string> = {
+    warm: 'golden, amber, orange, and warm red tones for inviting, energetic feeling',
+    cool: 'blue, teal, cyan tones for calm, professional, or mysterious mood',
+    vibrant: 'bold, saturated, high-contrast colors for dynamic, engaging visual impact',
+    neutral: 'balanced, neutral tones with selective color emphasis for versatility',
+  };
+
+  const GRADING_DESCRIPTIONS: Record<string, string> = {
+    cinematic: 'cinematic depth, film-like quality with refined color curves',
+    modern: 'contemporary, clean aesthetic with crisp colors',
+    vintage: 'retro, nostalgic quality with period-appropriate color treatment',
+    documentary: 'authentic, unmanipulated visual presentation',
+  };
+
   return `
 Color Palette:
 - Primary: ${colors.primary} - dominant color establishing mood and visual identity
 - Secondary: ${colors.secondary} - supporting color for depth and visual interest
 - Accent: ${colors.accent} - highlight color for focus points and visual emphasis
-- Mood: ${colors.mood} (${
-    colors.mood === 'warm'
-      ? 'golden, amber, orange, and warm red tones for inviting, energetic feeling'
-      : colors.mood === 'cool'
-        ? 'blue, teal, cyan tones for calm, professional, or mysterious mood'
-        : colors.mood === 'vibrant'
-          ? 'bold, saturated, high-contrast colors for dynamic, engaging visual impact'
-          : 'balanced, neutral tones with selective color emphasis for versatility'
-  })
-- Color grading style: ${colors.grading} - ensuring ${
-    colors.grading === 'cinematic'
-      ? 'cinematic depth, film-like quality with refined color curves'
-      : colors.grading === 'modern'
-        ? 'contemporary, clean aesthetic with crisp colors'
-        : colors.grading === 'vintage'
-          ? 'retro, nostalgic quality with period-appropriate color treatment'
-          : 'authentic, unmanipulated visual presentation'
-  }
+- Mood: ${colors.mood} (${MOOD_DESCRIPTIONS[colors.mood] || 'balanced, neutral tones'})
+- Color grading style: ${colors.grading} - ensuring ${GRADING_DESCRIPTIONS[colors.grading] || 'professional quality'}
 
 Apply consistent color grading throughout all frames. Use primary color dominantly, secondary for compositional depth and layering, accent for guiding viewer attention to key elements. Maintain color consistency between shots for visual coherence.
 `;
