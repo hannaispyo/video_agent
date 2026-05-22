@@ -78,7 +78,10 @@ export interface VisualScene {
   colorScheme?: ColorScheme;
   motionOption?: MotionOption;
   cinematicReference?: CinematicReference;
-  frameContinuity?: boolean;
+  frameContinuity?: {
+    linkedFromScene?: number;
+    linkedToScene?: number;
+  };
 }
 
 export interface Storyboard {

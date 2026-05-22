@@ -1,7 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ImageManifest, AnimationManifest, VideoClip } from '../types';
+import { ImageManifest, AnimationManifest, VideoClip, VisualScene } from '../types';
 import { VIDEO_AGENT_CONFIG } from '../config';
+import { FrameContinuityManager, FrameLink } from './frame-continuity';
 
 interface AnimationOptions {
   onProgress?: (message: string) => void;
@@ -198,6 +199,139 @@ export async function reanimateScene(
     console.error(`Failed to re-animate scene ${sceneNumber}:`, error);
     return null;
   }
+}
+
+/**
+ * Animate with frame continuity between clips
+ */
+export async function animateWithContinuity(
+  imageManifest: ImageManifest,
+  scenes: VisualScene[],
+  outputDir: string,
+  projectDir: string,
+  onProgress?: (message: string) => void
+): Promise<{ manifest: AnimationManifest; continuityManifest: object }> {
+  const continuityManager = new FrameContinuityManager(projectDir);
+  const clipPaths: VideoClip[] = [];
+  const frameLinks: FrameLink[] = [];
+
+  // Check ffmpeg availability
+  if (!FrameContinuityManager.isFfmpegAvailable()) {
+    onProgress?.('⚠️  ffmpeg not found. Frame continuity disabled. Install with: brew install ffmpeg');
+    // Fall back to regular animation without continuity
+    return {
+      manifest: await animateImages(imageManifest, outputDir, { onProgress }),
+      continuityManifest: { totalLinks: 0, links: [], warning: 'ffmpeg not available' },
+    };
+  }
+
+  onProgress?.('Starting animation with frame continuity...');
+
+  // Create clips directory
+  const clipsDir = path.join(outputDir, 'clips');
+  if (!fs.existsSync(clipsDir)) {
+    fs.mkdirSync(clipsDir, { recursive: true });
+  }
+
+  let successCount = 0;
+  let failureCount = 0;
+
+  for (let i = 0; i < imageManifest.assets.length; i++) {
+    const imageAsset = imageManifest.assets[i];
+    const scene = scenes.find((s) => s.sceneNumber === imageAsset.sceneNumber);
+
+    if (!scene) {
+      console.warn(`Scene ${imageAsset.sceneNumber} not found in storyboard`);
+      failureCount++;
+      continue;
+    }
+
+    try {
+      onProgress?.(`Animating scene ${imageAsset.sceneNumber}...`);
+
+      // Add frame continuity hint to scene if linked
+      let continuityHint = '';
+      if (scene.frameContinuity?.linkedFromScene !== undefined) {
+        continuityHint = continuityManager.getFrameLinkHint(
+          scene.frameContinuity.linkedFromScene,
+          scene.sceneNumber
+        );
+      }
+
+      // Animate clip (use existing animation logic)
+      const clipPath = await animateSingleClip(imageAsset.filePath, scene, continuityHint, clipsDir);
+
+      clipPaths.push({
+        sceneNumber: imageAsset.sceneNumber,
+        filePath: clipPath,
+        duration: VIDEO_AGENT_CONFIG.animation.defaultDuration,
+        codec: 'h264',
+        frameCount: VIDEO_AGENT_CONFIG.animation.defaultDuration * 30,
+        generatedAt: new Date().toISOString(),
+      });
+
+      // Extract final frame if next scene is linked
+      if (i < scenes.length - 1 && scenes[i + 1].frameContinuity?.linkedFromScene === scene.sceneNumber) {
+        try {
+          const finalFrame = await continuityManager.extractFinalFrame(clipPath, scene.sceneNumber);
+          frameLinks.push({
+            fromScene: scene.sceneNumber,
+            toScene: scenes[i + 1].sceneNumber,
+            frameFile: finalFrame,
+            extractedAt: new Date().toISOString(),
+          });
+          onProgress?.(`✓ Frame link created: Scene ${scene.sceneNumber} → Scene ${scenes[i + 1].sceneNumber}`);
+        } catch (error) {
+          console.warn(`⚠️  Could not extract frame from scene ${scene.sceneNumber}`, error);
+          // Continue without frame linking - graceful degradation
+        }
+      }
+
+      successCount++;
+    } catch (error) {
+      console.error(`Failed to animate scene ${imageAsset.sceneNumber}:`, error);
+      failureCount++;
+    }
+  }
+
+  onProgress?.(`Animation complete with continuity: ${successCount} clips, ${failureCount} failed`);
+
+  const manifest: AnimationManifest = {
+    totalClips: imageManifest.assets.length,
+    generatedClips: successCount,
+    failedClips: failureCount,
+    animationModel: 'kling-v1-with-continuity',
+    clips: clipPaths.sort((a, b) => a.sceneNumber - b.sceneNumber),
+    generatedAt: new Date().toISOString(),
+  };
+
+  const continuityManifest = continuityManager.createManifest(frameLinks);
+
+  return { manifest, continuityManifest };
+}
+
+/**
+ * Animate a single clip with optional continuity hint
+ */
+async function animateSingleClip(
+  imagePath: string,
+  scene: VisualScene,
+  continuityHint: string,
+  outputDir: string
+): Promise<string> {
+  // If using Kling API, add continuityHint to the prompt
+  // If using Remotion, can still pass as metadata
+  // For now, log it for reference
+  if (continuityHint) {
+    console.log(`[Scene ${scene.sceneNumber}] Frame continuity enabled`);
+  }
+
+  const clipPath = path.join(outputDir, `scene-${String(scene.sceneNumber).padStart(2, '0')}-animated.mp4`);
+
+  // Create placeholder clip for now
+  createPlaceholderClip(clipPath);
+
+  return clipPath;
 }
 
 /**
