@@ -21,13 +21,13 @@ export interface SkillInput {
 export interface MotionOption {
   type: 'subtle-camera' | 'subject-motion' | 'complex-motion' | 'static';
   camera?: {
-    motion: string;
+    motion: 'pan-left' | 'pan-right' | 'zoom-in' | 'zoom-out' | 'dolly' | 'tilt' | 'none';
     speed: 'slow' | 'medium' | 'fast';
-    intensity: number; // 0-1
+    intensity: number; // 0-100
   };
   subject?: {
     present: boolean;
-    motion: string;
+    motion: 'walk' | 'gesture' | 'write' | 'idle' | 'custom';
     frameConsistency: boolean;
   };
 }
