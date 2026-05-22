@@ -163,3 +163,37 @@ export function initializeVisualEnhancements(): void {
     console.log(`   ${status} ${key}: ${config.description}`);
   });
 }
+
+// Eleven Labs Text-to-Speech Configuration
+export const ELEVEN_LABS_CONFIG = {
+  enabled: !!process.env.ELEVEN_LABS_API_KEY,
+  apiKey: process.env.ELEVEN_LABS_API_KEY,
+  voiceId: process.env.ELEVEN_LABS_VOICE_ID || 'bella', // Default voice
+
+  // Voice options (popular Eleven Labs voices)
+  voices: {
+    bella: { id: '21m00Tcm4TlvDq8ikWAM', name: 'Bella', gender: 'female' },
+    josh: { id: 'TXe3JqFHuPnl9XUzIHl7', name: 'Josh', gender: 'male' },
+    samantha: { id: 'kL883cKlDUHpXJ4xm2aH', name: 'Samantha', gender: 'female' },
+    thomas: { id: 'tLqHw0jjVvGdqD8cVJPf', name: 'Thomas', gender: 'male' },
+  },
+
+  // Default synthesis settings
+  defaults: {
+    model_id: 'eleven_monolingual_v1',
+    voice_settings: {
+      stability: 0.5,
+      similarity_boost: 0.75,
+    },
+  },
+
+  // Duration validation
+  durationValidation: {
+    tolerance: 10, // ±10% variance acceptable
+  },
+
+  // API settings
+  endpoint: 'https://api.elevenlabs.io/v1/text-to-speech',
+  timeout: 30000, // 30 seconds
+  maxRetries: 3,
+};

@@ -131,6 +131,22 @@ export interface ImageManifest {
   generatedAt: string;
 }
 
+export interface AudioAsset {
+  sceneNumber?: number; // Optional if audio is whole voiceover
+  filePath: string;     // Path to MP3 file
+  durationMs: number;   // Duration in milliseconds
+  voiceId: string;      // Eleven Labs voice ID used
+  generatedAt: string;  // ISO timestamp
+}
+
+export interface AudioManifest {
+  totalDuration: number;  // Total audio duration in milliseconds
+  voiceId: string;
+  model: string;
+  assets: AudioAsset[];
+  generatedAt: string;
+}
+
 export interface AnimationHints {
   motion: string;
   duration: number;
