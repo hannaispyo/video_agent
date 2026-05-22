@@ -9,7 +9,9 @@
     "video-status": "echo 'TODO: Implement video status CLI'",
     "resume-video": "echo 'TODO: Implement resume CLI'",
     "build": "tsc",
-    "dev": "ts-node"
+    "dev": "ts-node",
+    "test": "vitest",
+    "test:run": "vitest run"
   },
   "keywords": [
     "video",
@@ -24,8 +26,10 @@
     "zod": "^3.22.0"
   },
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0",
-    "ts-node": "^10.9.0"
+    "@types/node": "^20.19.41",
+    "@vitest/ui": "^2.0.5",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3",
+    "vitest": "^2.0.5"
   }
 }
