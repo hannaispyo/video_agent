@@ -1,6 +1,6 @@
 import * as path from 'path';
 import * as fs from 'fs';
-import { VideoBrief, Script, Storyboard, ImagePrompts, ImageManifest, AnimationManifest, ProjectStatus, VisualCoherence } from '../types';
+import { VideoBrief, Script, Storyboard, ImagePrompts, ImageManifest, AnimationManifest, ProjectStatus, VisualCoherence, AudioManifest } from '../types';
 import { VideoProjectManager } from '../orchestrator';
 import { generateScript, validateScript } from './script-generation';
 import { generateStoryboard, validateStoryboard } from './storyboard-generation';
@@ -8,6 +8,8 @@ import { engineerPrompts, validatePrompts } from './prompt-engineering';
 import { generateImages, validateImageManifest } from './image-generation';
 import { animateImages, validateAnimationManifest } from './animation-handler';
 import { assembleVideo, validateVideoOutput, generateVideoInfo } from './video-assembly';
+import { createAudioSynthesizer } from './audio-synthesis';
+import { ELEVEN_LABS_CONFIG } from '../config';
 import { VisualConsistencyValidator } from '../validators/visual-consistency';
 import { FrameContinuityManager, FrameLink } from './frame-continuity';
 
@@ -78,31 +80,42 @@ export class AutoVideoExecutor {
       this.log('INIT', `Project created: ${this.manager.projectName}`);
 
       // Step 1: Generate script
+      let script: Script | null = null;
       if (this.options.skipStep !== 'scripting') {
         await this.executeScripting(brief);
+        script = await this.manager.getAsset<Script>('script');
       }
 
-      // Step 2: Generate storyboard
+      // Step 2: Generate audio (non-blocking)
+      if (script && this.options.skipStep !== 'audio') {
+        try {
+          await this.executeAudio(script);
+        } catch (error) {
+          this.log('AUDIO', `⚠️  Audio generation failed (non-blocking): ${error}`);
+        }
+      }
+
+      // Step 3: Generate storyboard
       if (this.options.skipStep !== 'storyboarding') {
         await this.executeStoryboarding();
       }
 
-      // Step 3: Engineer prompts
+      // Step 4: Engineer prompts
       if (this.options.skipStep !== 'prompts') {
         await this.executePromptEngineering();
       }
 
-      // Step 4: Generate images
+      // Step 5: Generate images
       if (this.options.skipStep !== 'images') {
         await this.executeImageGeneration();
       }
 
-      // Step 5: Animate images
+      // Step 6: Animate images
       if (this.options.skipStep !== 'animation') {
         await this.executeAnimation();
       }
 
-      // Step 6: Assemble video
+      // Step 7: Assemble video
       if (this.options.skipStep !== 'assembly') {
         await this.executeAssembly();
       }
@@ -144,6 +157,77 @@ export class AutoVideoExecutor {
       this.log('SCRIPT', `✓ Generated ${script.scenes.length} scenes, ${script.duration}s total`);
     } catch (error) {
       throw new Error(`Scripting failed: ${error}`);
+    }
+  }
+
+  private async executeAudio(script: Script) {
+    this.log('AUDIO', 'Generating voiceover...');
+    try {
+      if (!ELEVEN_LABS_CONFIG.enabled) {
+        this.log('AUDIO', '⚠️  Eleven Labs API key not configured. Skipping audio generation.');
+        this.manager.audioGenerated = false;
+        return;
+      }
+
+      // Compile full voiceover script from all scenes
+      const voiceover = script.scenes.map((s) => s.voiceover || '').join(' ');
+
+      // Generate audio
+      const synthesizer = createAudioSynthesizer();
+      this.log('AUDIO', `Voice: ${ELEVEN_LABS_CONFIG.voiceId}`);
+
+      const voiceoverResult = await synthesizer.generateVoiceover(voiceover, ELEVEN_LABS_CONFIG.voiceId);
+
+      // Validate duration
+      const validation = synthesizer.validateDuration(
+        voiceoverResult.durationMs,
+        script.duration,
+        ELEVEN_LABS_CONFIG.durationValidation.tolerance
+      );
+
+      this.log('AUDIO', `Generated: ${(voiceoverResult.durationMs / 1000).toFixed(1)}s`);
+      this.log('AUDIO', validation.message);
+
+      if (!validation.valid) {
+        this.log('AUDIO', `⚠️  Audio duration variance: ${validation.variance.toFixed(1)}% (tolerance: ±${ELEVEN_LABS_CONFIG.durationValidation.tolerance}%)`);
+      }
+
+      // Save audio file
+      const audioPath = path.join(this.manager.projectDir, 'voiceover.mp3');
+      fs.writeFileSync(audioPath, voiceoverResult.buffer);
+      this.log('AUDIO', `✅ Saved: ${audioPath}`);
+
+      // Save manifest
+      const audioManifest: AudioManifest = {
+        totalDuration: voiceoverResult.durationMs,
+        voiceId: ELEVEN_LABS_CONFIG.voiceId,
+        model: ELEVEN_LABS_CONFIG.defaults.model_id,
+        assets: [
+          {
+            filePath: audioPath,
+            durationMs: voiceoverResult.durationMs,
+            voiceId: ELEVEN_LABS_CONFIG.voiceId,
+            generatedAt: new Date().toISOString(),
+          },
+        ],
+        generatedAt: new Date().toISOString(),
+      };
+
+      const manifestPath = path.join(this.manager.projectDir, 'audio-manifest.json');
+      fs.writeFileSync(manifestPath, JSON.stringify(audioManifest, null, 2));
+
+      this.manager.audioPath = audioPath;
+      this.manager.audioManifest = audioManifest;
+      this.manager.audioGenerated = true;
+
+      await this.manager.recordApproval('audio', true);
+      await this.manager.advance();
+
+      this.log('AUDIO', `✓ Generated voiceover (${(voiceoverResult.durationMs / 1000).toFixed(1)}s)`);
+    } catch (error) {
+      this.log('AUDIO', `❌ Audio generation failed: ${error instanceof Error ? error.message : String(error)}`);
+      this.log('AUDIO', '⚠️  Continuing without audio (non-blocking failure)');
+      this.manager.audioGenerated = false;
     }
   }
 
@@ -352,6 +436,13 @@ export class AutoVideoExecutor {
   private logFinalReport(script: Script) {
     console.log('\n📋 Final Report:');
     console.log('   Script: ✅');
+
+    if (this.manager.audioGenerated) {
+      console.log(`   Audio: ✅ (${(this.manager.audioManifest?.totalDuration || 0) / 1000}s)`);
+    } else {
+      console.log('   Audio: ⚠️  Not generated');
+    }
+
     console.log('   Storyboard: ✅');
 
     if (this.manager.coherenceReport) {

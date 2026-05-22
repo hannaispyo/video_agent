@@ -66,6 +66,7 @@ export const VIDEO_AGENT_CONFIG = {
 
 export const STEP_ESTIMATES = {
   scripting: 5, // minutes
+  audio: 2,
   storyboarding: 5,
   prompts: 2,
   images: 15,
@@ -75,6 +76,7 @@ export const STEP_ESTIMATES = {
 
 export const STEPS = [
   'scripting',
+  'audio',
   'storyboarding',
   'prompts',
   'images',

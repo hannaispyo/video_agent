@@ -11,6 +11,7 @@ import {
   ImageManifest,
   AnimationManifest,
   VisualCoherence,
+  AudioManifest,
 } from './types';
 
 export class VideoProjectManager {
@@ -20,6 +21,9 @@ export class VideoProjectManager {
   createdAt: Date;
   coherenceReport?: VisualCoherence;
   frameContinuityManifest?: Record<string, any>;
+  audioPath?: string;
+  audioManifest?: AudioManifest;
+  audioGenerated: boolean = false;
 
   constructor(projectName: string) {
     this.projectName = projectName;
