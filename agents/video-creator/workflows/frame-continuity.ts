@@ -1,6 +1,9 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
 
 export interface FrameLink {
   fromScene: number;
@@ -43,9 +46,15 @@ export class FrameContinuityManager {
       // -sseof -3 means start 3 seconds before end
       // -update 1 overwrites output file on each frame
       // -q:v 1 means quality (1=best, 31=worst)
-      const command = `ffmpeg -sseof -3 -i "${videoPath}" -update 1 -q:v 1 "${frameFile}" 2>/dev/null`;
-
-      execSync(command, { stdio: 'pipe' });
+      await execFileAsync('ffmpeg', [
+        '-sseof', '-3',
+        '-i', videoPath,
+        '-update', '1',
+        '-q:v', '1',
+        frameFile
+      ], {
+        timeout: 30000  // 30 second timeout
+      });
 
       if (!fs.existsSync(frameFile)) {
         throw new Error(`Frame extraction did not create file: ${frameFile}`);
@@ -54,8 +63,8 @@ export class FrameContinuityManager {
       this.frameCache.set(sceneNumber, frameFile);
       return frameFile;
     } catch (error) {
-      console.error(`Failed to extract frame from ${videoPath}:`, error);
-      throw new Error(`Frame extraction failed for scene ${sceneNumber}`);
+      const errorMsg = error instanceof Error ? error.message : String(error);
+      throw new Error(`Frame extraction failed for scene ${sceneNumber}: ${errorMsg}`);
     }
   }
 
@@ -98,9 +107,11 @@ Maintain similar composition, camera angle, and subject position if applicable.
   /**
    * Check if ffmpeg is available
    */
-  static isFfmpegAvailable(): boolean {
+  static async isFfmpegAvailable(): Promise<boolean> {
     try {
-      execSync('ffmpeg -version', { stdio: 'pipe' });
+      await execFileAsync('ffmpeg', ['-version'], {
+        timeout: 5000
+      });
       return true;
     } catch {
       return false;

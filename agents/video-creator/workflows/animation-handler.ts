@@ -216,7 +216,7 @@ export async function animateWithContinuity(
   const frameLinks: FrameLink[] = [];
 
   // Check ffmpeg availability
-  if (!FrameContinuityManager.isFfmpegAvailable()) {
+  if (!(await FrameContinuityManager.isFfmpegAvailable())) {
     onProgress?.('⚠️  ffmpeg not found. Frame continuity disabled. Install with: brew install ffmpeg');
     // Fall back to regular animation without continuity
     return {
@@ -236,12 +236,27 @@ export async function animateWithContinuity(
   let successCount = 0;
   let failureCount = 0;
 
-  for (let i = 0; i < imageManifest.assets.length; i++) {
-    const imageAsset = imageManifest.assets[i];
-    const scene = scenes.find((s) => s.sceneNumber === imageAsset.sceneNumber);
+  // Ensure arrays match in length to prevent off-by-one errors
+  const sceneCount = Math.min(imageManifest.assets.length, scenes.length);
 
-    if (!scene) {
-      console.warn(`Scene ${imageAsset.sceneNumber} not found in storyboard`);
+  if (imageManifest.assets.length !== scenes.length) {
+    console.warn(
+      `⚠️  Image sequence length (${imageManifest.assets.length}) != scenes length (${scenes.length}). ` +
+      `Processing ${sceneCount} scenes.`
+    );
+  }
+
+  for (let i = 0; i < sceneCount; i++) {
+    const imageAsset = imageManifest.assets[i];
+    const scene = scenes[i];
+
+    // Verify scene matches by sceneNumber
+    if (scene.sceneNumber !== imageAsset.sceneNumber) {
+      console.warn(
+        `⚠️  Scene number mismatch at index ${i}: ` +
+        `scenes[${i}].sceneNumber=${scene.sceneNumber}, ` +
+        `imageAsset.sceneNumber=${imageAsset.sceneNumber}`
+      );
       failureCount++;
       continue;
     }
@@ -270,8 +285,8 @@ export async function animateWithContinuity(
         generatedAt: new Date().toISOString(),
       });
 
-      // Extract final frame if next scene is linked
-      if (i < scenes.length - 1 && scenes[i + 1].frameContinuity?.linkedFromScene === scene.sceneNumber) {
+      // Extract final frame if next scene is linked (use sceneCount to prevent off-by-one)
+      if (i < sceneCount - 1 && scenes[i + 1].frameContinuity?.linkedFromScene === scene.sceneNumber) {
         try {
           const finalFrame = await continuityManager.extractFinalFrame(clipPath, scene.sceneNumber);
           frameLinks.push({
@@ -282,7 +297,10 @@ export async function animateWithContinuity(
           });
           onProgress?.(`✓ Frame link created: Scene ${scene.sceneNumber} → Scene ${scenes[i + 1].sceneNumber}`);
         } catch (error) {
-          console.warn(`⚠️  Could not extract frame from scene ${scene.sceneNumber}`, error);
+          console.warn(
+            `⚠️  Frame extraction failed for scene ${scene.sceneNumber}: ` +
+            `${error instanceof Error ? error.message : 'Unknown error'}. Continuing without frame link.`
+          );
           // Continue without frame linking - graceful degradation
         }
       }
@@ -312,6 +330,9 @@ export async function animateWithContinuity(
 
 /**
  * Animate a single clip with optional continuity hint
+ *
+ * In future: integrate with Kling API or Remotion with Ken Burns effect
+ * Currently: creates placeholder for testing frame continuity logic
  */
 async function animateSingleClip(
   imagePath: string,
@@ -319,18 +340,18 @@ async function animateSingleClip(
   continuityHint: string,
   outputDir: string
 ): Promise<string> {
-  // If using Kling API, add continuityHint to the prompt
-  // If using Remotion, can still pass as metadata
-  // For now, log it for reference
-  if (continuityHint) {
-    console.log(`[Scene ${scene.sceneNumber}] Frame continuity enabled`);
-  }
-
   const clipPath = path.join(outputDir, `scene-${String(scene.sceneNumber).padStart(2, '0')}-animated.mp4`);
 
-  // Create placeholder clip for now
-  createPlaceholderClip(clipPath);
+  // TODO: Implement Kling API integration with continuityHint in prompt
+  // TODO: Or integrate Remotion with Ken Burns effect
+  // For MVP: create placeholder clip for testing frame continuity logic
 
+  if (continuityHint) {
+    console.log(`[Scene ${scene.sceneNumber}] Frame continuity hint (not yet integrated):`);
+    console.log(continuityHint);
+  }
+
+  createPlaceholderClip(clipPath);
   return clipPath;
 }
 
