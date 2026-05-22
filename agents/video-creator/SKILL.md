@@ -1,42 +1,48 @@
-# Emily's Video Creation Agent
+# video-creator Skill
 
-Fully automatic video creation agent that replicates Emily Higgins' cinematic process.
+Fully automatic video creation that replicates Emily Higgins' cinematic workflow.
 
-## Overview
-
-Orchestrates end-to-end video generation **completely automatically** - no pauses, no approvals:
+Generates professional videos end-to-end without interruptions:
 
 ```
-Brief → Script → Storyboard → Prompts → Images → Animation → Video
-(All steps run automatically with fallback handling)
+Brief → Script (Claude) → Storyboard → Prompts → Images → Animation → Video
 ```
 
-## Quick Start
+## Usage
 
-**Create video in one command (fully automatic):**
+### Create new video (automatic)
 
-```bash
-npm run create-video-auto -- \
+```
+/video-creator \
   --brief "3 ADHD Productivity Hacks" \
   --audience "ADHD individuals" \
   --message "Simple strategies to improve focus"
 ```
 
-That's it. Everything else happens automatically:
-- ✅ Script generation
-- ✅ Storyboard creation  
-- ✅ Image prompt optimization
-- ✅ Image generation (batch)
-- ✅ Animation (Kling or Remotion fallback)
-- ✅ Final video assembly
-
-**Optional parameters:**
-```bash
---duration 30        # Video length (default: 30s)
---tone energetic     # Video tone (energetic, steady, comedic, educational)
+**Optional:**
+```
+--duration 30              # Video length (default: 30s)
+--tone energetic           # Tone: energetic, steady, comedic, educational
 ```
 
-No approval gates, no waiting, no interruptions. Just provides progress logs.
+### Resume interrupted project
+
+```
+/video-creator --project my-video-name --resume
+```
+
+This continues from the last completed step.
+
+## What it does
+
+1. **Script** (5-10m) - Claude writes 30s script with scenes
+2. **Storyboard** (5-10m) - Claude describes visuals for each scene
+3. **Prompts** (2-5m) - Claude optimizes prompts for image generation
+4. **Images** (10-20m) - kie.ai generates images (batch, auto-retry)
+5. **Animation** (15-30m) - Kling animates (fallback: Remotion)
+6. **Assembly** (5-10m) - Remotion assembles final MP4
+
+**Total: ~60-90 minutes, fully automatic, no interruptions**
 
 ## Automatic Workflow
 

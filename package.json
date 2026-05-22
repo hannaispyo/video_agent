@@ -1,0 +1,31 @@
+{
+  "name": "authoflow-video-creator",
+  "version": "1.0.0",
+  "description": "Emily's Video Creation Agent - Automatic cinematic video generation",
+  "main": "dist/index.js",
+  "scripts": {
+    "video-creator": "ts-node scripts/video-creator-skill.ts",
+    "create-video-auto": "node scripts/create-video.js",
+    "video-status": "echo 'TODO: Implement video status CLI'",
+    "resume-video": "echo 'TODO: Implement resume CLI'",
+    "build": "tsc",
+    "dev": "ts-node"
+  },
+  "keywords": [
+    "video",
+    "generation",
+    "ai",
+    "claude",
+    "automation"
+  ],
+  "author": "Authoflow",
+  "license": "MIT",
+  "dependencies": {
+    "zod": "^3.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0"
+  }
+}
