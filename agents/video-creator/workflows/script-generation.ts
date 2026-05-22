@@ -118,33 +118,38 @@ async function generateScriptWithAPI(brief: VideoBrief): Promise<Script> {
  */
 function generateTemplateScript(brief: VideoBrief): Script {
   const duration = brief.duration || 30;
-  const sceneCount = Math.ceil(duration / 8);
+  const sceneCount = Math.max(2, Math.ceil(duration / 8));
 
   const scenes: Scene[] = [];
+  const baseDuration = Math.floor(duration / sceneCount);
+  let remainingTime = duration;
 
   // Scene 1: Hook
+  const scene1Duration = Math.min(3, duration - (sceneCount - 1) * baseDuration);
   scenes.push({
     number: 1,
-    duration: 3,
+    duration: scene1Duration,
     scriptLine: `Did you know? ${brief.keyMessage}`,
     voiceover: `Did you know? ${brief.keyMessage}`,
   });
+  remainingTime -= scene1Duration;
 
   // Middle scenes: Main content
-  for (let i = 2; i <= sceneCount - 1; i++) {
+  for (let i = 2; i < sceneCount; i++) {
     scenes.push({
       number: i,
-      duration: Math.floor(duration / sceneCount),
+      duration: baseDuration,
       scriptLine: `[Scene ${i}: Main content point]`,
       voiceover: `[Content for ${brief.audience}]`,
     });
+    remainingTime -= baseDuration;
   }
 
-  // Final scene: CTA
+  // Final scene: CTA - gets remaining time to ensure exact duration
   if (sceneCount > 1) {
     scenes.push({
       number: sceneCount,
-      duration: duration - (sceneCount - 1) * Math.floor(duration / sceneCount),
+      duration: Math.max(1, remainingTime),
       scriptLine: 'Take action today.',
       voiceover: 'Take action today.',
     });

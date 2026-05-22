@@ -10,6 +10,7 @@ import {
   ImagePrompts,
   ImageManifest,
   AnimationManifest,
+  VisualCoherence,
 } from './types';
 
 export class VideoProjectManager {
@@ -17,6 +18,8 @@ export class VideoProjectManager {
   projectDir: string;
   state: ProjectCheckpoint;
   createdAt: Date;
+  coherenceReport?: VisualCoherence;
+  frameContinuityManifest?: Record<string, any>;
 
   constructor(projectName: string) {
     this.projectName = projectName;
@@ -87,7 +90,7 @@ export class VideoProjectManager {
   async updateManifest(step: string, output: Record<string, any>): Promise<void> {
     const manifestPath = path.join(this.projectDir, `${step}-manifest.json`);
     fs.writeFileSync(manifestPath, JSON.stringify(output, null, 2));
-    this.state.assets[step] = manifestPath;
+    (this.state.assets as Record<string, string>)[step] = manifestPath;
     await this.saveCheckpoint();
   }
 
@@ -134,7 +137,7 @@ export class VideoProjectManager {
   }
 
   async getAsset<T>(assetName: string): Promise<T | null> {
-    const assetPath = this.state.assets[assetName];
+    const assetPath = (this.state.assets as Record<string, string>)[assetName];
     if (!assetPath) return null;
 
     try {
@@ -149,7 +152,7 @@ export class VideoProjectManager {
   async saveAsset(name: string, data: Record<string, any>): Promise<string> {
     const assetPath = path.join(this.projectDir, `${name}.json`);
     fs.writeFileSync(assetPath, JSON.stringify(data, null, 2));
-    this.state.assets[name] = assetPath;
+    (this.state.assets as Record<string, string>)[name] = assetPath;
     await this.saveCheckpoint();
     return assetPath;
   }

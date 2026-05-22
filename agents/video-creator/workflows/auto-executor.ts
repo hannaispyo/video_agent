@@ -1,5 +1,6 @@
 import * as path from 'path';
-import { VideoBrief, Script, Storyboard, ImagePrompts, ImageManifest, AnimationManifest, ProjectStatus } from '../types';
+import * as fs from 'fs';
+import { VideoBrief, Script, Storyboard, ImagePrompts, ImageManifest, AnimationManifest, ProjectStatus, VisualCoherence } from '../types';
 import { VideoProjectManager } from '../orchestrator';
 import { generateScript, validateScript } from './script-generation';
 import { generateStoryboard, validateStoryboard } from './storyboard-generation';
@@ -7,11 +8,48 @@ import { engineerPrompts, validatePrompts } from './prompt-engineering';
 import { generateImages, validateImageManifest } from './image-generation';
 import { animateImages, validateAnimationManifest } from './animation-handler';
 import { assembleVideo, validateVideoOutput, generateVideoInfo } from './video-assembly';
+import { VisualConsistencyValidator } from '../validators/visual-consistency';
+import { FrameContinuityManager, FrameLink } from './frame-continuity';
 
 interface AutoExecutorOptions {
   verbose?: boolean;
   skipStep?: string;
   onProgress?: (step: string, message: string) => void;
+}
+
+/**
+ * Validate storyboard visual coherence
+ */
+async function validateStoryboardCoherence(
+  storyboard: Storyboard,
+  outputDir: string
+): Promise<VisualCoherence | null> {
+  try {
+    const validator = new VisualConsistencyValidator();
+    const coherenceReport = validator.analyzeVisualCoherence(storyboard);
+
+    console.log('\n📊 Visual Coherence Analysis:');
+    console.log(`   Overall Score: ${coherenceReport.overallScore}/100`);
+    console.log(`   Color Consistency: ${coherenceReport.colorScore}/100`);
+    console.log(`   Motion Flow: ${coherenceReport.motionScore}/100`);
+    console.log(`   Style Consistency: ${coherenceReport.styleScore}/100`);
+    console.log(`   Recommendation: ${coherenceReport.recommendation}`);
+
+    if (coherenceReport.issues.length > 0) {
+      console.log('\n⚠️  Issues detected:');
+      coherenceReport.issues.forEach(issue => console.log(`   - ${issue}`));
+    }
+
+    // Save coherence report
+    const reportPath = path.join(outputDir, 'visual-coherence-report.json');
+    fs.writeFileSync(reportPath, JSON.stringify(coherenceReport, null, 2));
+    console.log(`\n✅ Coherence report saved to: ${reportPath}`);
+
+    return coherenceReport;
+  } catch (error) {
+    console.warn('⚠️  Visual coherence analysis failed (non-blocking):', error);
+    return null;
+  }
 }
 
 /**
@@ -125,6 +163,14 @@ export class AutoVideoExecutor {
       }
 
       await this.manager.saveAsset('storyboard', storyboard);
+
+      // Validate visual coherence
+      const coherenceReport = await validateStoryboardCoherence(storyboard, this.manager.projectDir);
+      if (coherenceReport) {
+        // Store coherence report in manager for later use
+        this.manager.coherenceReport = coherenceReport;
+      }
+
       await this.manager.recordApproval('storyboarding', true);
       await this.manager.advance();
 
@@ -195,6 +241,15 @@ export class AutoVideoExecutor {
       if (!imageManifest) throw new Error('No image manifest found');
 
       const clipsDir = path.join(this.manager.projectDir, 'clips');
+
+      // Check if ffmpeg is available for frame continuity
+      const ffmpegAvailable = await FrameContinuityManager.isFfmpegAvailable();
+      if (ffmpegAvailable) {
+        this.log('ANIM', '✅ FFmpeg available - frame continuity enabled');
+      } else {
+        this.log('ANIM', '⚠️  FFmpeg not available - frame continuity disabled');
+      }
+
       const manifest = await animateImages(imageManifest, clipsDir, {
         onProgress: (msg) => this.log('ANIM', msg),
       });
@@ -202,6 +257,46 @@ export class AutoVideoExecutor {
       const validation = validateAnimationManifest(manifest);
       if (!validation.valid && manifest.generatedClips === 0) {
         throw new Error('No clips were generated');
+      }
+
+      // Create frame continuity manifest if clips were generated
+      if (ffmpegAvailable && manifest.generatedClips > 0) {
+        try {
+          const frameContinuityManager = new FrameContinuityManager(this.manager.projectDir);
+          const frameLinks: FrameLink[] = [];
+
+          // Build frame links from consecutive clips
+          for (let i = 0; i < manifest.clips.length - 1; i++) {
+            const currentClip = manifest.clips[i];
+            const nextClip = manifest.clips[i + 1];
+
+            try {
+              const frameFile = await frameContinuityManager.extractFinalFrame(
+                currentClip.filePath,
+                currentClip.sceneNumber
+              );
+
+              frameLinks.push({
+                fromScene: currentClip.sceneNumber,
+                toScene: nextClip.sceneNumber,
+                frameFile,
+                extractedAt: new Date().toISOString(),
+              });
+            } catch (error) {
+              this.log('ANIM', `⚠️  Frame extraction failed for scene ${currentClip.sceneNumber}: ${error}`);
+            }
+          }
+
+          // Save frame continuity manifest
+          const frameContinuityManifest = frameContinuityManager.createManifest(frameLinks);
+          const manifestPath = path.join(this.manager.projectDir, 'frame-continuity-manifest.json');
+          fs.writeFileSync(manifestPath, JSON.stringify(frameContinuityManifest, null, 2));
+
+          this.log('ANIM', `✅ Frame continuity manifest saved (${frameLinks.length} links)`);
+          this.manager.frameContinuityManifest = frameContinuityManifest;
+        } catch (error) {
+          this.log('ANIM', `⚠️  Frame continuity processing failed (non-blocking): ${error}`);
+        }
       }
 
       await this.manager.updateManifest('animation', manifest);
@@ -245,10 +340,36 @@ export class AutoVideoExecutor {
       const videoInfo = generateVideoInfo(result.outputPath, script);
       await this.manager.saveAsset('video-info', videoInfo);
 
+      // Log final report with visual coherence and frame continuity
+      this.logFinalReport(script);
+
       this.log('ASSEM', `✓ Final video: ${result.outputPath} (${script.duration}s)`);
     } catch (error) {
       throw new Error(`Assembly failed: ${error}`);
     }
+  }
+
+  private logFinalReport(script: Script) {
+    console.log('\n📋 Final Report:');
+    console.log('   Script: ✅');
+    console.log('   Storyboard: ✅');
+
+    if (this.manager.coherenceReport) {
+      console.log(`   Visual Coherence: ${this.manager.coherenceReport.overallScore}/100`);
+    } else {
+      console.log('   Visual Coherence: ⚠️  Not available');
+    }
+
+    if (this.manager.frameContinuityManifest) {
+      console.log('   Frame Continuity: ✅ Enabled');
+    } else {
+      console.log('   Frame Continuity: ⚠️  Disabled');
+    }
+
+    console.log('   Images: ✅');
+    console.log('   Animation: ✅');
+    console.log('   Assembly: ✅');
+    console.log(`\n🎬 Final video: ${path.join(this.manager.projectDir, 'out.mp4')}`);
   }
 
   getStatus(): ProjectStatus {

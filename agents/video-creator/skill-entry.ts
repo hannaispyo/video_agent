@@ -6,18 +6,7 @@
 import * as path from 'path';
 import * as fs from 'fs';
 import { AutoVideoExecutor } from './workflows/auto-executor';
-import { VideoBrief } from './types';
-
-interface SkillInput {
-  brief?: string;
-  audience?: string;
-  message?: string;
-  duration?: string;
-  tone?: string;
-  project?: string;
-  resume?: boolean;
-  verbose?: boolean;
-}
+import { VideoBrief, SkillInput } from './types';
 
 export async function videoCreatorSkill(input: SkillInput): Promise<{
   success: boolean;
@@ -167,7 +156,7 @@ async function resumeProject(
       audience: '',
       keyMessage: '',
       duration: 30,
-      tone: 'professional',
+      tone: 'professional' as const,
     };
 
     const result = await executor.executeFullWorkflow(brief);
@@ -201,16 +190,26 @@ async function resumeProject(
  */
 async function main() {
   const args = process.argv.slice(2);
-  const params: SkillInput = {};
+  const params: any = {};
 
   for (let i = 0; i < args.length; i += 2) {
     if (args[i].startsWith('--')) {
-      const key = args[i].substring(2) as keyof SkillInput;
-      params[key] = args[i + 1];
+      const key = args[i].substring(2);
+      const value = args[i + 1];
+
+      if (value === 'true') {
+        params[key] = true;
+      } else if (value === 'false') {
+        params[key] = false;
+      } else if (!isNaN(Number(value))) {
+        params[key] = Number(value);
+      } else {
+        params[key] = value;
+      }
     }
   }
 
-  const result = await videoCreatorSkill(params);
+  const result = await videoCreatorSkill(params as SkillInput);
   console.log(result.message);
   process.exit(result.success ? 0 : 1);
 }
