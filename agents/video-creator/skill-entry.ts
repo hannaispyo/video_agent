@@ -1,6 +1,10 @@
 /**
  * Video Creator Skill Entry Point
  * Invocable via: /video-creator --brief "..." --audience "..." --message "..."
+ * Optional visual direction:
+ *   --style "flat lay con objetos físicos"   visual concept (constrains storyboard)
+ *   --motion "subtle-camera"                 Kling motion type
+ *   --color-mood "warm"                      color palette mood
  */
 
 import * as path from 'path';
@@ -44,6 +48,9 @@ Example:
     keyMessage: input.message,
     duration: input.duration ? parseInt(input.duration) : 30,
     tone: (input.tone || 'professional') as any,
+    style: input.style,
+    motion: input.motion as any,
+    colorMood: input.colorMood as any,
   };
 
   // Create project name
@@ -58,7 +65,11 @@ Example:
   console.log(`   Audience: ${brief.audience}`);
   console.log(`   Message: ${brief.keyMessage}`);
   console.log(`   Duration: ${brief.duration}s`);
-  console.log(`   Tone: ${brief.tone}\n`);
+  console.log(`   Tone: ${brief.tone}`);
+  if (brief.style)     console.log(`   Style: ${brief.style}`);
+  if (brief.motion)    console.log(`   Motion: ${brief.motion}`);
+  if (brief.colorMood) console.log(`   Color Mood: ${brief.colorMood}`);
+  console.log();
 
   // Check if project already exists
   const projectDir = path.join(process.cwd(), 'outputs', 'videos', projectName);

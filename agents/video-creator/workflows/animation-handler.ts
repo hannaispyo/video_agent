@@ -1,6 +1,6 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { ImageManifest, AnimationManifest, VideoClip, VisualScene } from '../types';
+import { ImageManifest, ImagePrompts, AnimationManifest, VideoClip, VisualScene } from '../types';
 import { VIDEO_AGENT_CONFIG } from '../config';
 import { FrameContinuityManager, FrameLink } from './frame-continuity';
 
@@ -28,6 +28,7 @@ interface KieTaskStatusResponse {
 interface AnimationOptions {
   onProgress?: (message: string) => void;
   forceRemotionFallback?: boolean;
+  imagePrompts?: ImagePrompts;
 }
 
 /**
@@ -38,7 +39,7 @@ export async function animateImages(
   outputDir: string,
   options: AnimationOptions = {}
 ): Promise<AnimationManifest> {
-  const { onProgress, forceRemotionFallback } = options;
+  const { onProgress, forceRemotionFallback, imagePrompts } = options;
 
   onProgress?.('Starting image animation...');
 
@@ -50,7 +51,7 @@ export async function animateImages(
   ) {
     try {
       onProgress?.('Attempting animation with Kling API...');
-      return await animateWithKling(imageManifest, outputDir, onProgress);
+      return await animateWithKling(imageManifest, outputDir, onProgress, imagePrompts);
     } catch (error) {
       console.warn('Kling animation failed, falling back to Remotion:', error);
       if (!VIDEO_AGENT_CONFIG.animation.fallbackToRemotion) {
@@ -70,12 +71,18 @@ export async function animateImages(
 async function animateWithKling(
   imageManifest: ImageManifest,
   outputDir: string,
-  onProgress?: (message: string) => void
+  onProgress?: (message: string) => void,
+  imagePrompts?: ImagePrompts
 ): Promise<AnimationManifest> {
   const kieApiKey = process.env.KIE_API_KEY;
   if (!kieApiKey) {
     throw new Error('KIE_API_KEY not set');
   }
+
+  // Build a lookup map: sceneNumber → imagePrompt for quick access
+  const promptsByScene = new Map(
+    (imagePrompts?.scenes ?? []).map((p) => [p.sceneNumber, p])
+  );
 
   const clips: VideoClip[] = [];
   let successCount = 0;
@@ -92,6 +99,16 @@ async function animateWithKling(
     try {
       onProgress?.(`Animating scene ${imageAsset.sceneNumber}...`);
 
+      // Resolve motion prompt and duration from imagePrompts if available
+      const scenePrompt = promptsByScene.get(imageAsset.sceneNumber);
+      const motionPrompt = scenePrompt?.animationHints?.motion || '';
+      const sceneDuration = scenePrompt?.animationHints?.duration
+        ?? VIDEO_AGENT_CONFIG.animation.defaultDuration;
+
+      if (motionPrompt) {
+        onProgress?.(`  Scene ${imageAsset.sceneNumber}: motion="${motionPrompt}" duration=${sceneDuration}s`);
+      }
+
       // Step 1: Submit image-to-video task
       const submitResponse = await fetch(KIE_CREATE_TASK, {
         method: 'POST',
@@ -105,8 +122,8 @@ async function animateWithKling(
             image_urls: [imageAsset.filePath.startsWith('http')
               ? imageAsset.filePath
               : `file://${imageAsset.filePath}`],
-            prompt: '',  // motion is described by image context
-            duration: String(VIDEO_AGENT_CONFIG.animation.defaultDuration),
+            prompt: motionPrompt,
+            duration: String(sceneDuration),
             sound: false,
           },
         }),
@@ -134,14 +151,14 @@ async function animateWithKling(
       clips.push({
         sceneNumber: imageAsset.sceneNumber,
         filePath: clipPath,
-        duration: VIDEO_AGENT_CONFIG.animation.defaultDuration,
+        duration: sceneDuration,
         codec: 'h264',
-        frameCount: VIDEO_AGENT_CONFIG.animation.defaultDuration * 30,
+        frameCount: sceneDuration * 30,
         generatedAt: new Date().toISOString(),
       });
 
       successCount++;
-      onProgress?.(`  ✅ Scene ${imageAsset.sceneNumber} animated`);
+      onProgress?.(`  ✅ Scene ${imageAsset.sceneNumber} animated (${sceneDuration}s)`);
     } catch (error) {
       console.error(`Failed to animate scene ${imageAsset.sceneNumber}:`, error);
       failureCount++;

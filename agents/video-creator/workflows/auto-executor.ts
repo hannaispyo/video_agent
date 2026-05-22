@@ -61,6 +61,7 @@ async function validateStoryboardCoherence(
 export class AutoVideoExecutor {
   manager: VideoProjectManager;
   options: AutoExecutorOptions;
+  private brief!: VideoBrief;
 
   constructor(projectName: string, options: AutoExecutorOptions = {}) {
     this.manager = new VideoProjectManager(projectName);
@@ -75,6 +76,9 @@ export class AutoVideoExecutor {
 
   async executeFullWorkflow(brief: VideoBrief): Promise<{ success: boolean; outputPath?: string; error?: string }> {
     try {
+      // Store brief for use in sub-steps (e.g. storyboarding visual constraints)
+      this.brief = brief;
+
       // Initialize project
       await this.manager.initialize(brief);
       this.log('INIT', `Project created: ${this.manager.projectName}`);
@@ -239,6 +243,7 @@ export class AutoVideoExecutor {
 
       const storyboard = await generateStoryboard(script, {
         onProgress: (msg) => this.log('STORY', msg),
+        brief: this.brief,
       });
 
       const validation = validateStoryboard(storyboard);
@@ -324,6 +329,9 @@ export class AutoVideoExecutor {
       const imageManifest = await this.manager.getAsset<ImageManifest>('images');
       if (!imageManifest) throw new Error('No image manifest found');
 
+      // Load image prompts so Kling receives per-scene motion hints and real durations
+      const imagePrompts = await this.manager.getAsset<ImagePrompts>('image-prompts');
+
       const clipsDir = path.join(this.manager.projectDir, 'clips');
 
       // Check if ffmpeg is available for frame continuity
@@ -336,6 +344,7 @@ export class AutoVideoExecutor {
 
       const manifest = await animateImages(imageManifest, clipsDir, {
         onProgress: (msg) => this.log('ANIM', msg),
+        imagePrompts: imagePrompts ?? undefined,
       });
 
       const validation = validateAnimationManifest(manifest);

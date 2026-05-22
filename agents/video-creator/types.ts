@@ -5,6 +5,10 @@ export interface VideoBrief {
   duration?: number; // seconds
   tone?: 'energetic' | 'steady' | 'comedic' | 'educational' | 'professional';
   campaign?: string;
+  // Visual direction — constrains Claude's choices for storyboard and Kling prompts
+  style?: string;       // e.g. "flat lay con objetos físicos, iluminación cálida"
+  motion?: 'subtle-camera' | 'subject-motion' | 'complex-motion' | 'static';
+  colorMood?: 'warm' | 'cool' | 'vibrant' | 'neutral';
 }
 
 export interface SkillInput {
@@ -13,6 +17,9 @@ export interface SkillInput {
   message?: string;
   duration?: string;
   tone?: string;
+  style?: string;       // visual concept: "flat lay con objetos físicos, iluminación cálida"
+  motion?: string;      // Kling motion type: subtle-camera | subject-motion | complex-motion | static
+  colorMood?: string;   // color palette mood: warm | cool | vibrant | neutral
   project?: string;
   resume?: boolean;
   verbose?: boolean;

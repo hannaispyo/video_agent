@@ -1,7 +1,23 @@
-import { Script, Storyboard, VisualScene } from '../types';
+import { Script, Storyboard, VisualScene, VideoBrief } from '../types';
 import { VIDEO_AGENT_CONFIG } from '../config';
 
-const STORYBOARD_PROMPT = (script: Script) => `
+const STORYBOARD_PROMPT = (script: Script, brief?: Partial<VideoBrief>) => {
+  const styleConstraint = brief?.style
+    ? `\n⚠️  VISUAL CONCEPT (REQUIRED — do not deviate): "${brief.style}"
+All scene descriptions MUST reflect this visual style.`
+    : '';
+
+  const motionConstraint = brief?.motion
+    ? `\n⚠️  MOTION TYPE (REQUIRED for all scenes): "${brief.motion}"
+Every scene must use motionOption.type = "${brief.motion}".`
+    : '';
+
+  const colorConstraint = brief?.colorMood
+    ? `\n⚠️  COLOR MOOD (REQUIRED for all scenes): "${brief.colorMood}"
+Every scene must use colorScheme.mood = "${brief.colorMood}".`
+    : '';
+
+  return `
 You are a cinematographer and art director helping create professional cinematic videos.
 
 Create a visual storyboard for this ${script.duration}s video script, including:
@@ -13,6 +29,7 @@ Create a visual storyboard for this ${script.duration}s video script, including:
 6. Camera motion specifics (pan, zoom, dolly, static)
 7. Subject motion if applicable (hand movements, people walking, etc.)
 8. Frame continuity hints (if this scene should link to previous via final frame)
+${styleConstraint}${motionConstraint}${colorConstraint}
 
 Script:
 ${JSON.stringify(script, null, 2)}
@@ -49,9 +66,11 @@ For each scene, create a JSON object with these fields:
 Ensure visual cohesion across all scenes. Colors should work together. Motion should flow naturally between clips.
 Return as JSON array of scene objects.
 `;
+};
 
 interface StoryboardGenerationOptions {
   onProgress?: (message: string) => void;
+  brief?: Partial<VideoBrief>;
 }
 
 /**
@@ -61,22 +80,25 @@ export async function generateStoryboard(
   script: Script,
   options: StoryboardGenerationOptions = {}
 ): Promise<Storyboard> {
-  const { onProgress } = options;
+  const { onProgress, brief } = options;
 
   onProgress?.('Generating cinematic storyboard with Claude...');
+  if (brief?.style)     onProgress?.(`   Style: ${brief.style}`);
+  if (brief?.motion)    onProgress?.(`   Motion: ${brief.motion}`);
+  if (brief?.colorMood) onProgress?.(`   Color Mood: ${brief.colorMood}`);
 
   if (VIDEO_AGENT_CONFIG.claude.apiKey) {
-    return await generateStoryboardWithClaudeEnhanced(script);
+    return await generateStoryboardWithClaudeEnhanced(script, brief);
   } else {
     console.log('⚠️  CLAUDE_API_KEY not set. Using template storyboard.');
-    return generateTemplateStoryboard(script);
+    return generateTemplateStoryboard(script, brief);
   }
 }
 
 /**
  * Generate enhanced storyboard using Claude API with color schemes and cinematic references
  */
-async function generateStoryboardWithClaudeEnhanced(script: Script): Promise<Storyboard> {
+async function generateStoryboardWithClaudeEnhanced(script: Script, brief?: Partial<VideoBrief>): Promise<Storyboard> {
   const apiKey = VIDEO_AGENT_CONFIG.claude.apiKey;
   if (!apiKey) {
     throw new Error('CLAUDE_API_KEY not set for enhanced storyboarding');
@@ -96,7 +118,7 @@ async function generateStoryboardWithClaudeEnhanced(script: Script): Promise<Sto
         messages: [
           {
             role: 'user',
-            content: STORYBOARD_PROMPT(script),
+            content: STORYBOARD_PROMPT(script, brief),
           },
         ],
       }),
@@ -148,7 +170,7 @@ async function generateStoryboardWithClaudeEnhanced(script: Script): Promise<Sto
 /**
  * Generate template storyboard for demonstration
  */
-function generateTemplateStoryboard(script: Script): Storyboard {
+function generateTemplateStoryboard(script: Script, brief?: Partial<VideoBrief>): Storyboard {
   const visualStyles = [
     {
       camera: 'wide establishing shot',
@@ -280,17 +302,30 @@ function generateTemplateStoryboard(script: Script): Storyboard {
     const descIndex = index % visualDescriptions.length;
     const style = visualStyles[styleIndex];
 
+    // Apply user-provided overrides if present
+    const colorScheme = brief?.colorMood
+      ? { ...style.colorScheme, mood: brief.colorMood as any }
+      : style.colorScheme;
+
+    const motionOption = brief?.motion
+      ? { ...style.motionOption, type: brief.motion as any }
+      : style.motionOption;
+
+    const visualDescription = brief?.style
+      ? `${brief.style}. ${visualDescriptions[descIndex]}`
+      : visualDescriptions[descIndex];
+
     return {
       sceneNumber: scene.number,
       duration: scene.duration,
       scriptLine: scene.scriptLine,
-      visualDescription: visualDescriptions[descIndex],
-      imagePromptSeed: visualDescriptions[descIndex],
+      visualDescription,
+      imagePromptSeed: visualDescription,
       style: style.style,
       camera: style.camera,
       animation: style.animation,
-      colorScheme: style.colorScheme,
-      motionOption: style.motionOption,
+      colorScheme,
+      motionOption,
       cinematicReference: style.cinematicReference,
       frameContinuity: {
         linkedFromScene: undefined,
