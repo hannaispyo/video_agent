@@ -1,8 +1,12 @@
 import * as fs from 'fs';
 import * as path from 'path';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
 import { ImageManifest, ImagePrompts, AnimationManifest, VideoClip, VisualScene } from '../types';
 import { VIDEO_AGENT_CONFIG } from '../config';
 import { FrameContinuityManager, FrameLink } from './frame-continuity';
+
+const execFileAsync = promisify(execFile);
 
 const KIE_BASE_URL = 'https://api.kie.ai';
 const KIE_CREATE_TASK = `${KIE_BASE_URL}/api/v1/jobs/createTask`;
@@ -66,7 +70,38 @@ export async function animateImages(
 }
 
 /**
- * Animate using Kling model via kie.ai API
+ * Extract the very last frame of a video to a JPEG file using ffmpeg.
+ * Used for frame chaining: last frame of clip N becomes start of clip N+1.
+ */
+async function extractLastFrame(videoPath: string, outputJpeg: string): Promise<void> {
+  // -sseof -0.1 → seek 100ms before end; -vframes 1 → capture 1 frame
+  await execFileAsync('ffmpeg', [
+    '-sseof', '-0.1',
+    '-i', videoPath,
+    '-vframes', '1',
+    '-q:v', '2',
+    '-y',
+    outputJpeg,
+  ], { timeout: 30000 });
+
+  if (!fs.existsSync(outputJpeg)) {
+    throw new Error(`ffmpeg did not produce frame file: ${outputJpeg}`);
+  }
+}
+
+/**
+ * Animate using Kling model via kie.ai API.
+ *
+ * Scenes are processed SEQUENTIALLY so the final frame of each clip can be
+ * fed as the start frame of the next Kling job, ensuring visual continuity.
+ *
+ * Chain logic per scene N (N > 1):
+ *   image_urls[0]  = last frame of clip N-1  (temporal start — where we left off)
+ *   tail_image_url = generated scene image N  (visual target — where we're going)
+ *
+ * Scene 1 uses its generated image directly (no previous clip exists).
+ * If ffmpeg is unavailable or frame extraction fails, the chain resets and
+ * scene N uses its generated image as normal (graceful degradation).
  */
 async function animateWithKling(
   imageManifest: ImageManifest,
@@ -79,7 +114,7 @@ async function animateWithKling(
     throw new Error('KIE_API_KEY not set');
   }
 
-  // Build a lookup map: sceneNumber → imagePrompt for quick access
+  // Build lookup: sceneNumber → imagePrompt
   const promptsByScene = new Map(
     (imagePrompts?.scenes ?? []).map((p) => [p.sceneNumber, p])
   );
@@ -87,46 +122,68 @@ async function animateWithKling(
   const clips: VideoClip[] = [];
   let successCount = 0;
   let failureCount = 0;
+  // Holds the path to the last extracted frame; null = no chain available
+  let previousLastFramePath: string | null = null;
 
   const clipsDir = path.join(outputDir, 'clips');
-  if (!fs.existsSync(clipsDir)) {
-    fs.mkdirSync(clipsDir, { recursive: true });
+  const framesDir = path.join(outputDir, 'chain-frames');
+  if (!fs.existsSync(clipsDir)) fs.mkdirSync(clipsDir, { recursive: true });
+  if (!fs.existsSync(framesDir)) fs.mkdirSync(framesDir, { recursive: true });
+
+  // Check ffmpeg once upfront
+  const ffmpegAvailable = await FrameContinuityManager.isFfmpegAvailable();
+  if (!ffmpegAvailable) {
+    onProgress?.('⚠️  ffmpeg not found — frame chaining disabled (clips will be independent)');
   }
 
-  onProgress?.(`Submitting ${imageManifest.assets.length} images to Kling via kie.ai...`);
+  // Sort by scene number: sequential processing is required for frame chaining
+  const sortedAssets = [...imageManifest.assets].sort((a, b) => a.sceneNumber - b.sceneNumber);
+  onProgress?.(`Submitting ${sortedAssets.length} scenes to Kling (sequential, frame-chained)...`);
 
-  for (const imageAsset of imageManifest.assets) {
+  for (const imageAsset of sortedAssets) {
     try {
       onProgress?.(`Animating scene ${imageAsset.sceneNumber}...`);
 
-      // Resolve motion prompt and duration from imagePrompts if available
       const scenePrompt = promptsByScene.get(imageAsset.sceneNumber);
       const motionPrompt = scenePrompt?.animationHints?.motion || '';
       const sceneDuration = scenePrompt?.animationHints?.duration
         ?? VIDEO_AGENT_CONFIG.animation.defaultDuration;
 
-      if (motionPrompt) {
-        onProgress?.(`  Scene ${imageAsset.sceneNumber}: motion="${motionPrompt}" duration=${sceneDuration}s`);
+      // Resolve image URLs
+      const toUrl = (p: string) =>
+        p.startsWith('http') ? p : `file://${path.resolve(p)}`;
+
+      const sceneImageUrl = toUrl(imageAsset.filePath);
+
+      // Build Kling input — chain if we have a previous last frame
+      const klingInput: Record<string, unknown> = {
+        prompt: motionPrompt,
+        duration: String(sceneDuration),
+        sound: false,
+      };
+
+      if (previousLastFramePath) {
+        // Start from where the last clip ended, animate toward this scene's image
+        klingInput.image_urls = [toUrl(previousLastFramePath)];
+        klingInput.tail_image_url = sceneImageUrl;
+        onProgress?.(`  → chaining from scene ${imageAsset.sceneNumber - 1}'s last frame`);
+      } else {
+        // First scene or chain broken: use scene image directly
+        klingInput.image_urls = [sceneImageUrl];
       }
 
-      // Step 1: Submit image-to-video task
+      if (motionPrompt) {
+        onProgress?.(`  motion: "${motionPrompt}" (${sceneDuration}s)`);
+      }
+
+      // Step 1: Submit task
       const submitResponse = await fetch(KIE_CREATE_TASK, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${kieApiKey}`,
         },
-        body: JSON.stringify({
-          model: KLING_MODEL,
-          input: {
-            image_urls: [imageAsset.filePath.startsWith('http')
-              ? imageAsset.filePath
-              : `file://${imageAsset.filePath}`],
-            prompt: motionPrompt,
-            duration: String(sceneDuration),
-            sound: false,
-          },
-        }),
+        body: JSON.stringify({ model: KLING_MODEL, input: klingInput }),
       });
 
       if (!submitResponse.ok) {
@@ -139,9 +196,9 @@ async function animateWithKling(
       }
 
       const taskId = submitData.data.taskId;
-      onProgress?.(`  Scene ${imageAsset.sceneNumber}: task ${taskId} queued`);
+      onProgress?.(`  task ${taskId} queued`);
 
-      // Step 2: Poll until video is ready
+      // Step 2: Poll until ready
       const videoUrl = await pollKlingTask(taskId, kieApiKey, imageAsset.sceneNumber, onProgress);
 
       // Step 3: Download MP4
@@ -158,10 +215,26 @@ async function animateWithKling(
       });
 
       successCount++;
-      onProgress?.(`  ✅ Scene ${imageAsset.sceneNumber} animated (${sceneDuration}s)`);
+
+      // Step 4: Extract last frame for next scene's chain (non-blocking failure)
+      if (ffmpegAvailable) {
+        try {
+          const framePath = path.join(framesDir, `scene-${String(imageAsset.sceneNumber).padStart(2, '0')}-last.jpg`);
+          await extractLastFrame(clipPath, framePath);
+          previousLastFramePath = framePath;
+          onProgress?.(`  ✅ Scene ${imageAsset.sceneNumber} done + last frame saved for next chain`);
+        } catch (frameErr) {
+          onProgress?.(`  ⚠️  Frame extraction failed — next scene won't chain: ${frameErr}`);
+          previousLastFramePath = null;
+        }
+      } else {
+        onProgress?.(`  ✅ Scene ${imageAsset.sceneNumber} done (${sceneDuration}s)`);
+        previousLastFramePath = null;
+      }
     } catch (error) {
       console.error(`Failed to animate scene ${imageAsset.sceneNumber}:`, error);
       failureCount++;
+      previousLastFramePath = null; // reset chain on any failure
     }
   }
 
