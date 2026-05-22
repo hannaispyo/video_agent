@@ -197,13 +197,10 @@ export class ElevenLabsAudioSynthesizer {
   private _calculateMP3Duration(buffer: Buffer): number {
     // MP3 frame header format:
     // FFFBAAAA AAABCCCD DDDEEEEE FFGGGGGG
-    // FFF = sync (0xFFF = 12 bits)
-    // B = MPEG version
-    // C = Layer
-    // D = Bitrate index
-    // E = Sample rate index
-    // F = Padding
-    // G = Private
+    // Byte 0: Frame sync (0xFF)
+    // Byte 1: sync continuation (11100000) + MPEG version (2 bits) + Layer (2 bits)
+    // Byte 2: Bitrate index (4 bits) + Sample rate index (2 bits) + Padding (1 bit)
+    // Byte 3: Private bit + emphasis (2 bits)
 
     const BITRATES: Record<number, Record<number, number>> = {
       // [version][bitrate_index] in kbps
@@ -218,51 +215,81 @@ export class ElevenLabsAudioSynthesizer {
       3: { 0: 11025, 1: 12000, 2: 8000 },
     };
 
-    let frameCount = 0;
-    let samplesPerFrame = 1152; // Standard for most MP3 files
+    let totalSamples = 0;
+    let offset = 0;
+    let firstFrameParsed = false;
+    let samplesPerFrame = 1152; // Default for MPEG1
     let sampleRate = 44100;
 
-    // Scan for MP3 frames
-    for (let i = 0; i < buffer.length - 3; i++) {
+    // Scan for MP3 frames and sum samples
+    while (offset < buffer.length - 3) {
       // Look for frame sync (0xFFF)
-      if ((buffer[i] === 0xff && (buffer[i + 1] & 0xe0) === 0xe0)) {
-        frameCount++;
+      if (buffer[offset] === 0xff && (buffer[offset + 1] & 0xe0) === 0xe0) {
+        const byte1 = buffer[offset + 1];
+        const byte2 = buffer[offset + 2];
 
-        // Try to extract sample rate and bitrate from first frame
-        if (frameCount === 1 && i + 3 < buffer.length) {
-          const byte2 = buffer[i + 1];
-          const byte3 = buffer[i + 2];
-          const byte4 = buffer[i + 3];
+        // Extract MPEG version (bits 3-4 of byte1)
+        const mpegVersionBits = (byte1 >> 3) & 0x03;
+        const versionMap: Record<number, number> = { 0: 3, 1: 2, 2: 2, 3: 1 };
+        const version = versionMap[mpegVersionBits];
 
-          // Extract MPEG version (bits 3-4 of byte2)
-          const mpegVersion = (byte2 >> 3) & 0x03;
+        // Extract bitrate index (bits 4-7 of byte2)
+        const bitrateIndex = (byte2 >> 4) & 0x0f;
 
-          // Extract sample rate index (bits 0-1 of byte3)
-          const sampleRateIndex = (byte3 >> 2) & 0x03;
-
-          // Map to actual sample rate
-          const versionMap: Record<number, number> = { 0: 3, 1: 2, 2: 2, 3: 1 };
-          const mappedVersion = versionMap[mpegVersion];
-
-          if (SAMPLE_RATES[mappedVersion] && SAMPLE_RATES[mappedVersion][sampleRateIndex] !== undefined) {
-            sampleRate = SAMPLE_RATES[mappedVersion][sampleRateIndex];
-          }
+        // 0 = free format, 15 = reserved - skip these frames
+        if (bitrateIndex === 0 || bitrateIndex === 15) {
+          offset += 4;
+          continue;
         }
+
+        // Extract sample rate index (bits 2-3 of byte2)
+        const sampleRateIndex = (byte2 >> 2) & 0x03;
+
+        // Look up bitrate from table
+        const bitrate = BITRATES[version] ? BITRATES[version][bitrateIndex] : null;
+        const frameSampleRate = SAMPLE_RATES[version] ? SAMPLE_RATES[version][sampleRateIndex] : null;
+
+        // Skip frame if bitrate or sample rate lookup fails
+        if (!bitrate || !frameSampleRate) {
+          offset += 4;
+          continue;
+        }
+
+        // Extract padding bit (bit 1 of byte2)
+        const paddingBit = (byte2 >> 1) & 0x01;
+
+        // Calculate samples per frame based on MPEG version
+        const framesSamplesPerFrame = version === 1 ? 1152 : 576;
+
+        // Calculate frame size: (144 * bitrate / sampleRate) + padding
+        const frameSize = Math.floor((144 * bitrate) / frameSampleRate) + paddingBit;
+
+        // Store first frame data for reference
+        if (!firstFrameParsed) {
+          samplesPerFrame = framesSamplesPerFrame;
+          sampleRate = frameSampleRate;
+          firstFrameParsed = true;
+        }
+
+        // Accumulate samples
+        totalSamples += framesSamplesPerFrame;
+
+        // Move to next frame
+        offset += frameSize;
+      } else {
+        offset++;
       }
     }
 
-    // Fallback: estimate based on buffer size
-    // Average MP3 bitrate ~128 kbps
-    if (frameCount === 0) {
+    // Fallback: estimate based on buffer size if no frames found
+    if (totalSamples === 0) {
       const estimatedBitrate = 128; // kbps
       const durationSeconds = (buffer.length * 8) / (estimatedBitrate * 1000);
       return Math.round(durationSeconds * 1000);
     }
 
-    // Calculate total duration
-    const totalSamples = frameCount * samplesPerFrame;
+    // Calculate total duration from accumulated samples
     const durationSeconds = totalSamples / sampleRate;
-
     return Math.round(durationSeconds * 1000);
   }
 
