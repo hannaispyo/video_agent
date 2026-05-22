@@ -3,8 +3,48 @@ export interface VideoBrief {
   audience: string;
   keyMessage: string;
   duration?: number; // seconds
-  tone?: 'energetic' | 'steady' | 'comedic' | 'educational';
+  tone?: 'energetic' | 'steady' | 'comedic' | 'educational' | 'professional';
   campaign?: string;
+}
+
+export interface SkillInput {
+  brief?: string;
+  audience?: string;
+  message?: string;
+  duration?: string;
+  tone?: string;
+  project?: string;
+  resume?: boolean;
+  verbose?: boolean;
+}
+
+export interface MotionOption {
+  type: 'subtle-camera' | 'subject-motion' | 'complex-motion' | 'static';
+  camera?: {
+    motion: string;
+    speed: 'slow' | 'medium' | 'fast';
+    intensity: number; // 0-1
+  };
+  subject?: {
+    present: boolean;
+    motion: string;
+    frameConsistency: boolean;
+  };
+}
+
+export interface ColorScheme {
+  primary: string; // hex color
+  secondary: string; // hex color
+  accent: string; // hex color
+  mood: 'warm' | 'cool' | 'neutral' | 'vibrant';
+  grading: 'cinematic' | 'modern' | 'vintage' | 'documentary';
+}
+
+export interface CinematicReference {
+  movie?: string;
+  tvShow?: string;
+  style: string;
+  inspirationBrief: string;
 }
 
 export interface Scene {
@@ -12,6 +52,8 @@ export interface Scene {
   duration: number;
   scriptLine: string;
   voiceover?: string;
+  motionRequirements?: string;
+  subjectPresent?: boolean;
 }
 
 export interface Script {
@@ -33,6 +75,10 @@ export interface VisualScene {
   camera?: string;
   animation?: string;
   referenceImageUrl?: string;
+  colorScheme?: ColorScheme;
+  motionOption?: MotionOption;
+  cinematicReference?: CinematicReference;
+  frameContinuity?: boolean;
 }
 
 export interface Storyboard {
