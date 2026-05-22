@@ -190,3 +190,31 @@ export interface WorkflowResult {
   error?: string;
   timestamp: string;
 }
+
+export interface ColorAnalysis {
+  score: number;
+  issues: string[];
+  colorVariances: number[];
+}
+
+export interface MotionAnalysis {
+  score: number;
+  issues: string[];
+  jumps: Array<{from: number, to: number, percentChange: number}>;
+}
+
+export interface StyleAnalysis {
+  score: number;
+  issues: string[];
+  gradingStyles: string[];
+  cinematicReferences: string[];
+}
+
+export interface VisualCoherence {
+  overallScore: number;
+  colorScore: number;
+  motionScore: number;
+  styleScore: number;
+  issues: string[];
+  recommendation: string;
+}
