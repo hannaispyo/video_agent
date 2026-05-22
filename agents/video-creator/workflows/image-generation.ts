@@ -3,10 +3,25 @@ import * as path from 'path';
 import { ImagePrompts, ImageAsset, ImageManifest } from '../types';
 import { VIDEO_AGENT_CONFIG } from '../config';
 
-interface KieAIResponse {
-  image?: string; // base64 encoded
-  url?: string;
-  error?: string;
+const KIE_BASE_URL = 'https://api.kie.ai';
+const KIE_IMAGE_ENDPOINT = `${KIE_BASE_URL}/api/v1/gpt4o-image/generate`;
+const KIE_IMAGE_STATUS_ENDPOINT = `${KIE_BASE_URL}/api/v1/gpt4o-image/record-info`;
+const KIE_POLL_INTERVAL_MS = 3000;
+const KIE_POLL_TIMEOUT_MS = 120000; // 2 minutes
+
+interface KieTaskResponse {
+  code: number;
+  msg: string;
+  data: { taskId: string };
+}
+
+interface KieImageStatusResponse {
+  data: {
+    taskId: string;
+    successFlag: number; // 0 = processing, 1 = done, 2 = failed
+    progress: string;
+    response?: { result_urls: string[] };
+  };
 }
 
 /**
@@ -100,7 +115,8 @@ async function generateSingleImage(
 
   for (let attempt = 0; attempt < VIDEO_AGENT_CONFIG.image.retryAttempts; attempt++) {
     try {
-      const response = await fetch('https://api.openai.com/v1/images/generations', {
+      // Step 1: Submit task to kie.ai GPT-4o image endpoint
+      const submitResponse = await fetch(KIE_IMAGE_ENDPOINT, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -108,35 +124,30 @@ async function generateSingleImage(
         },
         body: JSON.stringify({
           prompt,
-          model: 'gpt4o-image', // Using kie.ai compatible endpoint
-          size: '1920x1080',
-          quality: VIDEO_AGENT_CONFIG.image.quality,
-          n: 1,
+          size: '16:9',
+          nVariants: 1,
+          isEnhance: false,
         }),
       });
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.statusText}`);
+      if (!submitResponse.ok) {
+        throw new Error(`kie.ai submit error: ${submitResponse.status} ${submitResponse.statusText}`);
       }
 
-      const data = (await response.json()) as any;
-
-      if (data.error) {
-        throw new Error(data.error.message);
+      const submitData = (await submitResponse.json()) as KieTaskResponse;
+      if (submitData.code !== 200 || !submitData.data?.taskId) {
+        throw new Error(`kie.ai task creation failed: ${submitData.msg}`);
       }
 
-      if (!data.data || data.data.length === 0) {
-        throw new Error('No image data in response');
-      }
+      const taskId = submitData.data.taskId;
 
-      const imageUrl = data.data[0].url;
+      // Step 2: Poll until done
+      const imageUrl = await pollKieImageTask(taskId, apiKey);
+
+      // Step 3: Download image
       const filename = `scene-${String(sceneNumber).padStart(2, '0')}.png`;
       const filepath = path.join(outputDir, filename);
-
-      // Download image if URL is provided
-      if (imageUrl) {
-        await downloadImage(imageUrl, filepath);
-      }
+      await downloadImage(imageUrl, filepath);
 
       return {
         sceneNumber,
@@ -144,8 +155,9 @@ async function generateSingleImage(
         generatedAt: new Date().toISOString(),
         prompt,
         metadata: {
-          size: '1920x1080',
+          size: '16:9',
           quality: VIDEO_AGENT_CONFIG.image.quality,
+          taskId,
         },
       };
     } catch (error) {
@@ -166,12 +178,48 @@ async function generateSingleImage(
 }
 
 /**
- * Download image from URL
+ * Poll kie.ai task until image is ready, return image URL
+ */
+async function pollKieImageTask(taskId: string, apiKey: string): Promise<string> {
+  const start = Date.now();
+
+  while (Date.now() - start < KIE_POLL_TIMEOUT_MS) {
+    await new Promise((resolve) => setTimeout(resolve, KIE_POLL_INTERVAL_MS));
+
+    const statusResponse = await fetch(
+      `${KIE_IMAGE_STATUS_ENDPOINT}?taskId=${taskId}`,
+      { headers: { Authorization: `Bearer ${apiKey}` } }
+    );
+
+    if (!statusResponse.ok) {
+      throw new Error(`kie.ai status check failed: ${statusResponse.statusText}`);
+    }
+
+    const status = (await statusResponse.json()) as KieImageStatusResponse;
+    const { successFlag, response } = status.data;
+
+    if (successFlag === 1 && response?.result_urls?.[0]) {
+      return response.result_urls[0];
+    }
+    if (successFlag === 2) {
+      throw new Error(`kie.ai image generation failed for task ${taskId}`);
+    }
+    // successFlag === 0 → still processing, keep polling
+  }
+
+  throw new Error(`kie.ai image task ${taskId} timed out after ${KIE_POLL_TIMEOUT_MS / 1000}s`);
+}
+
+/**
+ * Download image from URL to disk
  */
 async function downloadImage(url: string, filepath: string): Promise<void> {
-  // TODO: Implement actual download when needed
-  // For now, just create a placeholder
-  fs.writeFileSync(filepath, 'PNG_PLACEHOLDER', 'utf-8');
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download image: ${response.statusText}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(filepath, buffer);
 }
 
 /**

@@ -4,6 +4,27 @@ import { ImageManifest, AnimationManifest, VideoClip, VisualScene } from '../typ
 import { VIDEO_AGENT_CONFIG } from '../config';
 import { FrameContinuityManager, FrameLink } from './frame-continuity';
 
+const KIE_BASE_URL = 'https://api.kie.ai';
+const KIE_CREATE_TASK = `${KIE_BASE_URL}/api/v1/jobs/createTask`;
+const KIE_TASK_STATUS = `${KIE_BASE_URL}/api/v1/jobs/recordInfo`;
+const KLING_MODEL = 'kling-2.6/image-to-video';
+const KIE_POLL_INTERVAL_MS = 5000;
+const KIE_POLL_TIMEOUT_MS = 300000; // 5 minutes per clip
+
+interface KieCreateTaskResponse {
+  code: number;
+  msg: string;
+  data: { taskId: string };
+}
+
+interface KieTaskStatusResponse {
+  data: {
+    taskId: string;
+    state: 'waiting' | 'queuing' | 'generating' | 'success' | 'fail';
+    resultJson?: string; // JSON string: { "resultUrls": ["https://..."] }
+  };
+}
+
 interface AnimationOptions {
   onProgress?: (message: string) => void;
   forceRemotionFallback?: boolean;
@@ -21,11 +42,11 @@ export async function animateImages(
 
   onProgress?.('Starting image animation...');
 
-  // Try Kling first if enabled
+  // Try Kling first if enabled (via kie.ai — uses KIE_API_KEY)
   if (
     VIDEO_AGENT_CONFIG.animation.preferKling &&
     !forceRemotionFallback &&
-    process.env.KLING_API_KEY
+    process.env.KIE_API_KEY
   ) {
     try {
       onProgress?.('Attempting animation with Kling API...');
@@ -44,65 +65,153 @@ export async function animateImages(
 }
 
 /**
- * Animate using Kling API
+ * Animate using Kling model via kie.ai API
  */
 async function animateWithKling(
   imageManifest: ImageManifest,
   outputDir: string,
   onProgress?: (message: string) => void
 ): Promise<AnimationManifest> {
-  const klingApiKey = process.env.KLING_API_KEY;
-  if (!klingApiKey) {
-    throw new Error('KLING_API_KEY not set');
+  const kieApiKey = process.env.KIE_API_KEY;
+  if (!kieApiKey) {
+    throw new Error('KIE_API_KEY not set');
   }
 
   const clips: VideoClip[] = [];
   let successCount = 0;
   let failureCount = 0;
 
-  // Create clips directory
   const clipsDir = path.join(outputDir, 'clips');
   if (!fs.existsSync(clipsDir)) {
     fs.mkdirSync(clipsDir, { recursive: true });
   }
 
-  onProgress?.(`Submitting ${imageManifest.assets.length} images to Kling...`);
+  onProgress?.(`Submitting ${imageManifest.assets.length} images to Kling via kie.ai...`);
 
   for (const imageAsset of imageManifest.assets) {
     try {
       onProgress?.(`Animating scene ${imageAsset.sceneNumber}...`);
 
-      // For demonstration, create placeholder clips
-      // In production, would call Kling API
+      // Step 1: Submit image-to-video task
+      const submitResponse = await fetch(KIE_CREATE_TASK, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${kieApiKey}`,
+        },
+        body: JSON.stringify({
+          model: KLING_MODEL,
+          input: {
+            image_urls: [imageAsset.filePath.startsWith('http')
+              ? imageAsset.filePath
+              : `file://${imageAsset.filePath}`],
+            prompt: '',  // motion is described by image context
+            duration: String(VIDEO_AGENT_CONFIG.animation.defaultDuration),
+            sound: false,
+          },
+        }),
+      });
+
+      if (!submitResponse.ok) {
+        throw new Error(`kie.ai submit error: ${submitResponse.status} ${submitResponse.statusText}`);
+      }
+
+      const submitData = (await submitResponse.json()) as KieCreateTaskResponse;
+      if (submitData.code !== 200 || !submitData.data?.taskId) {
+        throw new Error(`kie.ai task creation failed: ${submitData.msg}`);
+      }
+
+      const taskId = submitData.data.taskId;
+      onProgress?.(`  Scene ${imageAsset.sceneNumber}: task ${taskId} queued`);
+
+      // Step 2: Poll until video is ready
+      const videoUrl = await pollKlingTask(taskId, kieApiKey, imageAsset.sceneNumber, onProgress);
+
+      // Step 3: Download MP4
       const clipPath = path.join(clipsDir, `scene-${String(imageAsset.sceneNumber).padStart(2, '0')}-animated.mp4`);
-      createPlaceholderClip(clipPath);
+      await downloadVideo(videoUrl, clipPath);
 
       clips.push({
         sceneNumber: imageAsset.sceneNumber,
         filePath: clipPath,
         duration: VIDEO_AGENT_CONFIG.animation.defaultDuration,
         codec: 'h264',
-        frameCount: VIDEO_AGENT_CONFIG.animation.defaultDuration * 30, // 30fps
+        frameCount: VIDEO_AGENT_CONFIG.animation.defaultDuration * 30,
         generatedAt: new Date().toISOString(),
       });
 
       successCount++;
+      onProgress?.(`  ✅ Scene ${imageAsset.sceneNumber} animated`);
     } catch (error) {
       console.error(`Failed to animate scene ${imageAsset.sceneNumber}:`, error);
       failureCount++;
     }
   }
 
-  onProgress?.(`Kling animation complete: ${successCount} clips, ${failureCount} failed`);
+  onProgress?.(`Kling complete: ${successCount} clips, ${failureCount} failed`);
 
   return {
     totalClips: imageManifest.assets.length,
     generatedClips: successCount,
     failedClips: failureCount,
-    animationModel: 'kling-v1',
+    animationModel: KLING_MODEL,
     clips: clips.sort((a, b) => a.sceneNumber - b.sceneNumber),
     generatedAt: new Date().toISOString(),
   };
+}
+
+/**
+ * Poll kie.ai until Kling task completes, return video URL
+ */
+async function pollKlingTask(
+  taskId: string,
+  apiKey: string,
+  sceneNumber: number,
+  onProgress?: (message: string) => void
+): Promise<string> {
+  const start = Date.now();
+
+  while (Date.now() - start < KIE_POLL_TIMEOUT_MS) {
+    await new Promise((resolve) => setTimeout(resolve, KIE_POLL_INTERVAL_MS));
+
+    const statusResponse = await fetch(
+      `${KIE_TASK_STATUS}?taskId=${taskId}`,
+      { headers: { Authorization: `Bearer ${apiKey}` } }
+    );
+
+    if (!statusResponse.ok) {
+      throw new Error(`kie.ai status check failed: ${statusResponse.statusText}`);
+    }
+
+    const status = (await statusResponse.json()) as KieTaskStatusResponse;
+    const { state, resultJson } = status.data;
+
+    onProgress?.(`  Scene ${sceneNumber}: ${state}`);
+
+    if (state === 'success' && resultJson) {
+      const result = JSON.parse(resultJson) as { resultUrls: string[] };
+      if (result.resultUrls?.[0]) return result.resultUrls[0];
+      throw new Error(`Kling task ${taskId} succeeded but returned no URL`);
+    }
+    if (state === 'fail') {
+      throw new Error(`Kling task ${taskId} failed`);
+    }
+    // waiting | queuing | generating → keep polling
+  }
+
+  throw new Error(`Kling task ${taskId} timed out after ${KIE_POLL_TIMEOUT_MS / 1000}s`);
+}
+
+/**
+ * Download video MP4 from URL to disk
+ */
+async function downloadVideo(url: string, filepath: string): Promise<void> {
+  const response = await fetch(url);
+  if (!response.ok) {
+    throw new Error(`Failed to download video: ${response.statusText}`);
+  }
+  const buffer = Buffer.from(await response.arrayBuffer());
+  fs.writeFileSync(filepath, buffer);
 }
 
 /**
