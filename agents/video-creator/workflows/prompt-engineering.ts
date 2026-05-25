@@ -7,6 +7,7 @@ import {
   CinematicReference,
 } from '../types';
 import { VIDEO_AGENT_CONFIG, KLING_CONFIG } from '../config';
+import { askClaude, isClaudeCliAvailable, extractJsonArray } from './claude-cli';
 
 const PROMPT_ENGINEERING_PROMPT = (storyboard: Storyboard) => `
 You are an expert at writing image generation prompts for professional video production.
@@ -191,62 +192,27 @@ export async function engineerPrompts(
 
   onProgress?.('Engineering image prompts with Claude...');
 
-  if (VIDEO_AGENT_CONFIG.claude.apiKey) {
-    return await engineerPromptsWithAPI(storyboard);
+  if (await isClaudeCliAvailable()) {
+    return await engineerPromptsWithCLI(storyboard);
   } else {
-    console.log('⚠️  Using template prompts for demonstration');
+    console.log('⚠️  Claude CLI not available. Using template prompts for demonstration.');
     return generateTemplatePrompts(storyboard);
   }
 }
 
 /**
- * Generate prompts using Claude API
+ * Generate image prompts using Claude Code CLI (`claude -p`) — no API key required
  */
-async function engineerPromptsWithAPI(storyboard: Storyboard): Promise<ImagePrompts> {
-  const apiKey = VIDEO_AGENT_CONFIG.claude.apiKey;
-  if (!apiKey) {
-    throw new Error('CLAUDE_API_KEY not set');
-  }
-
+async function engineerPromptsWithCLI(storyboard: Storyboard): Promise<ImagePrompts> {
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: VIDEO_AGENT_CONFIG.claude.model,
-        max_tokens: 4000,
-        messages: [
-          {
-            role: 'user',
-            content: PROMPT_ENGINEERING_PROMPT(storyboard),
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Claude API error: ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as any;
-    const promptText = data.content[0].text;
-
-    const jsonMatch = promptText.match(/\[[\s\S]*\]/);
-    if (!jsonMatch) {
-      throw new Error('Failed to extract JSON from Claude response');
-    }
-
-    const promptsArray = JSON.parse(jsonMatch[0]);
+    const responseText = await askClaude(PROMPT_ENGINEERING_PROMPT(storyboard));
+    const promptsArray = JSON.parse(extractJsonArray(responseText));
     return {
       scenes: promptsArray,
       generatedAt: new Date().toISOString(),
     };
   } catch (error) {
-    console.error('Error calling Claude API for prompt engineering:', error);
+    console.error('Error calling Claude CLI for prompt engineering:', error);
     throw error;
   }
 }

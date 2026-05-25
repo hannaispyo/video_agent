@@ -1,5 +1,6 @@
 import { VideoBrief, Script, Scene } from '../types';
 import { VIDEO_AGENT_CONFIG } from '../config';
+import { askClaude, isClaudeCliAvailable, extractJsonObject } from './claude-cli';
 
 const SCRIPT_GENERATION_PROMPT = (brief: VideoBrief) => `
 You are a professional video scriptwriter. Create a ${brief.duration || 30}-second video script for the following brief:
@@ -50,65 +51,27 @@ export async function generateScript(
 
   onProgress?.('Generating script with Claude...');
 
-  // TODO: Call Claude Opus API when CLAUDE_API_KEY is available
-  // For now, return a template script that demonstrates the structure
-  if (VIDEO_AGENT_CONFIG.claude.apiKey) {
-    return await generateScriptWithAPI(brief);
+  if (await isClaudeCliAvailable()) {
+    return await generateScriptWithCLI(brief);
   } else {
-    console.log('⚠️  CLAUDE_API_KEY not set. Using template script for demonstration.');
+    console.log('⚠️  Claude CLI not available. Using template script for demonstration.');
     return generateTemplateScript(brief);
   }
 }
 
 /**
- * Generate script using Claude Opus API (requires CLAUDE_API_KEY)
+ * Generate script using Claude Code CLI (`claude -p`) — no API key required
  */
-async function generateScriptWithAPI(brief: VideoBrief): Promise<Script> {
-  const apiKey = VIDEO_AGENT_CONFIG.claude.apiKey;
-  if (!apiKey) {
-    throw new Error('CLAUDE_API_KEY not set in environment');
-  }
-
+async function generateScriptWithCLI(brief: VideoBrief): Promise<Script> {
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: VIDEO_AGENT_CONFIG.claude.model,
-        max_tokens: 2000,
-        messages: [
-          {
-            role: 'user',
-            content: SCRIPT_GENERATION_PROMPT(brief),
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Claude API error: ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as any;
-    const scriptText = data.content[0].text;
-
-    // Parse JSON from response
-    const jsonMatch = scriptText.match(/\{[\s\S]*\}/);
-    if (!jsonMatch) {
-      throw new Error('Failed to extract JSON from Claude response');
-    }
-
-    const scriptJson = JSON.parse(jsonMatch[0]);
+    const responseText = await askClaude(SCRIPT_GENERATION_PROMPT(brief));
+    const scriptJson = JSON.parse(extractJsonObject(responseText));
     return {
       ...scriptJson,
       generatedAt: new Date().toISOString(),
     };
   } catch (error) {
-    console.error('Error calling Claude API:', error);
+    console.error('Error calling Claude CLI for script:', error);
     throw error;
   }
 }

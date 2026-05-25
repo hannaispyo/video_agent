@@ -1,5 +1,6 @@
 import { Script, Storyboard, VisualScene, VideoBrief } from '../types';
 import { VIDEO_AGENT_CONFIG } from '../config';
+import { askClaude, isClaudeCliAvailable, extractJsonArray } from './claude-cli';
 
 const STORYBOARD_PROMPT = (script: Script, brief?: Partial<VideoBrief>) => {
   const styleConstraint = brief?.style
@@ -87,57 +88,21 @@ export async function generateStoryboard(
   if (brief?.motion)    onProgress?.(`   Motion: ${brief.motion}`);
   if (brief?.colorMood) onProgress?.(`   Color Mood: ${brief.colorMood}`);
 
-  if (VIDEO_AGENT_CONFIG.claude.apiKey) {
+  if (await isClaudeCliAvailable()) {
     return await generateStoryboardWithClaudeEnhanced(script, brief);
   } else {
-    console.log('⚠️  CLAUDE_API_KEY not set. Using template storyboard.');
+    console.log('⚠️  Claude CLI not available. Using template storyboard.');
     return generateTemplateStoryboard(script, brief);
   }
 }
 
 /**
- * Generate enhanced storyboard using Claude API with color schemes and cinematic references
+ * Generate enhanced storyboard using Claude Code CLI (`claude -p`) — no API key required
  */
 async function generateStoryboardWithClaudeEnhanced(script: Script, brief?: Partial<VideoBrief>): Promise<Storyboard> {
-  const apiKey = VIDEO_AGENT_CONFIG.claude.apiKey;
-  if (!apiKey) {
-    throw new Error('CLAUDE_API_KEY not set for enhanced storyboarding');
-  }
-
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-      },
-      body: JSON.stringify({
-        model: VIDEO_AGENT_CONFIG.claude.model,
-        max_tokens: 6000,
-        messages: [
-          {
-            role: 'user',
-            content: STORYBOARD_PROMPT(script, brief),
-          },
-        ],
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Claude API error: ${response.statusText}`);
-    }
-
-    const data = (await response.json()) as any;
-    const storyboardText = data.content[0].text;
-
-    // Extract JSON array from response
-    const jsonMatch = storyboardText.match(/\[\s*\{[\s\S]*\}\s*\]/);
-    if (!jsonMatch) {
-      throw new Error('Failed to extract storyboard JSON from Claude response');
-    }
-
-    const scenesArray = JSON.parse(jsonMatch[0]);
+    const responseText = await askClaude(STORYBOARD_PROMPT(script, brief));
+    const scenesArray = JSON.parse(extractJsonArray(responseText));
 
     return {
       title: script.title,
@@ -162,7 +127,7 @@ async function generateStoryboardWithClaudeEnhanced(script: Script, brief?: Part
       generatedAt: new Date().toISOString(),
     };
   } catch (error) {
-    console.error('Error calling Claude API for enhanced storyboarding:', error);
+    console.error('Error calling Claude CLI for enhanced storyboarding:', error);
     throw error;
   }
 }
