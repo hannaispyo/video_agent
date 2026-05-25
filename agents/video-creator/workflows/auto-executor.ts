@@ -332,8 +332,6 @@ export class AutoVideoExecutor {
       // Load image prompts so Kling receives per-scene motion hints and real durations
       const imagePrompts = await this.manager.getAsset<ImagePrompts>('image-prompts');
 
-      const clipsDir = path.join(this.manager.projectDir, 'clips');
-
       // Check if ffmpeg is available for frame continuity
       const ffmpegAvailable = await FrameContinuityManager.isFfmpegAvailable();
       if (ffmpegAvailable) {
@@ -342,7 +340,8 @@ export class AutoVideoExecutor {
         this.log('ANIM', '⚠️  FFmpeg not available - frame continuity disabled');
       }
 
-      const manifest = await animateImages(imageManifest, clipsDir, {
+      // Pass projectDir — animateImages creates clips/ subdirectory internally
+      const manifest = await animateImages(imageManifest, this.manager.projectDir, {
         onProgress: (msg) => this.log('ANIM', msg),
         imagePrompts: imagePrompts ?? undefined,
       });
