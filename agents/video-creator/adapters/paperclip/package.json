@@ -1,0 +1,92 @@
+{
+  "name": "@authoflow/paperclip-video-creator",
+  "version": "1.0.0",
+  "description": "Paperclip adapter — automatic multi-scene video generation",
+  "main": "dist/src/index.js",
+  "exports": {
+    ".": "./dist/src/index.js",
+    "./server": "./dist/server/index.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch"
+  },
+  "keywords": ["paperclip", "adapter", "video", "kling", "authoflow"],
+  "license": "MIT",
+  "dependencies": {
+    "typescript": "^5.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0"
+  },
+  "paperclip": {
+    "adapter": {
+      "type": "video_creator",
+      "main": "./dist/src/index.js",
+      "server": "./dist/server/index.js",
+      "configFields": [
+        {
+          "key": "claudeApiKey",
+          "label": "Claude API Key",
+          "type": "secret",
+          "description": "Anthropic API key for script and storyboard generation",
+          "required": false
+        },
+        {
+          "key": "kieApiKey",
+          "label": "KIE API Key",
+          "type": "secret",
+          "description": "kie.ai API key for image generation (GPT-4o) and animation (Kling)",
+          "required": true
+        },
+        {
+          "key": "elevenLabsApiKey",
+          "label": "Eleven Labs API Key",
+          "type": "secret",
+          "description": "Eleven Labs API key for voiceover generation",
+          "required": false
+        },
+        {
+          "key": "storageBucket",
+          "label": "Storage Bucket",
+          "type": "string",
+          "description": "S3 or Cloudflare R2 bucket name for uploading the final video",
+          "required": false
+        },
+        {
+          "key": "storagePublicUrl",
+          "label": "Storage Public URL",
+          "type": "string",
+          "description": "Base URL for public video access, e.g. https://videos.yourdomain.com",
+          "required": false
+        },
+        {
+          "key": "storageEndpoint",
+          "label": "Storage Endpoint (R2 only)",
+          "type": "string",
+          "description": "Cloudflare R2 endpoint: https://{accountId}.r2.cloudflarestorage.com",
+          "required": false
+        },
+        {
+          "key": "awsAccessKeyId",
+          "label": "AWS / R2 Access Key ID",
+          "type": "secret",
+          "required": false
+        },
+        {
+          "key": "awsSecretAccessKey",
+          "label": "AWS / R2 Secret Access Key",
+          "type": "secret",
+          "required": false
+        },
+        {
+          "key": "timeoutSec",
+          "label": "Timeout (seconds)",
+          "type": "number",
+          "default": 5400,
+          "description": "Max execution time in seconds. Default: 5400 (90 minutes)"
+        }
+      ]
+    }
+  }
+}
