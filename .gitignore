@@ -1,0 +1,17 @@
+# Environment — never commit real credentials
+.env
+.env.local
+.env.*.local
+
+# Build output
+dist/
+node_modules/
+
+# Video outputs (large files)
+outputs/
+
+# macOS
+.DS_Store
+
+# TypeScript cache
+*.tsbuildinfo
